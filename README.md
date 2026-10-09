@@ -1,6 +1,7 @@
-# Mechatronics_Soccer_Robot
+# Mechatronics Soccer Robot
 
 ### Headless Mode Login 
+
 
 **Email:** fekr9180@colorado.edu
 
