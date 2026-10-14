@@ -1,11 +1,12 @@
 #include "Chassis.h"
 
-Chassis::Chassis(Wheel fl, Wheel fr, Wheel bl, Wheel br){
-    front_right = fr;
-    front_left = fl;
-    back_right = br;
-    back_left = bl;
-}
+Chassis::Chassis(const Wheel& fl, const Wheel& fr, const Wheel& bl, const Wheel& br):
+    front_right(fr),
+    front_left(fl),
+    back_right(br),
+    back_left(bl)
+    {
+    }
 
 void Chassis::init() {
     front_right.init();

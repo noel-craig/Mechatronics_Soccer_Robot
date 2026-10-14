@@ -3,11 +3,11 @@
 
 #include "Wheel.h"
 #include <Arduino.h>
-#include <cmath>
+#include <math.h>
 
 class Chassis {
   public:
-    Chassis(Wheel fl, Wheel fr, Wheel bl, Wheel br);
+    Chassis(const Wheel& fl, const Wheel& fr, const Wheel& bl, const Wheel& br);
 
     void init();
 

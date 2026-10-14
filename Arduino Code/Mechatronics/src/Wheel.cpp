@@ -4,7 +4,7 @@ Wheel::Wheel(int pwm_pin, int in1_pin, int in2_pin, bool dir_invert) {
     pwm = pwm_pin;
     in_1 = in1_pin;
     in_2 = in2_pin;
-    reverse = dir_invert;
+    _reverse = dir_invert;
 }
 
 void Wheel::init() {
@@ -24,7 +24,7 @@ void Wheel::setSpeed(int speed) {
 }
 
 void Wheel::forward(int speed) {
-    if (reverse) {
+    if (_reverse) {
         digitalWrite(in_1, HIGH);
         digitalWrite(in_2, LOW);
     } else {
@@ -35,7 +35,7 @@ void Wheel::forward(int speed) {
 }
 
 void Wheel::reverse(int speed) {
-    if (reverse) {
+    if (_reverse) {
         digitalWrite(in_1, LOW);
         digitalWrite(in_2, HIGH);
     } else {

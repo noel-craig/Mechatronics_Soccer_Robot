@@ -15,7 +15,7 @@ class Wheel {
     int pwm; // PWM Pin for speed control
     int in_1; // direction control pin 1
     int in_2; // direction control pin 2
-    bool reverse; // whether the wheel is reversed 
+    bool _reverse; // whether the wheel is reversed 
 };
 
 #endif
