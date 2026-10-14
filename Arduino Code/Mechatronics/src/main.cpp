@@ -34,80 +34,169 @@ int rightmotorspeed = 0;
 
 int thresh = 200; // off the white tape
 
-// void spin(char *direction, int motor_speed){
-//   if (strcmp(direction, "CCW") == 0){
-//     Serial.println("spinning CCW");
-//     for (int i = 0; i < num_wheels; i+=2){
-//       int j = i + 1;
-//       wheelForward(i, motor_speed);
-//       wheelReverse(j, motor_speed);
-//     }
-//   }
-//   else if (strcmp(direction, "CWO") ==0){
-//     Serial.println("spinning CWO");
-//     for (int i = 0; i < num_wheels; i+=2){
-//       int j = i + 1;
-//       wheelForward(j, motor_speed);
-//       wheelReverse(i, motor_speed);
-//     }
-//   }
-//   else{
-//     Serial.println("Wrong direction input for spin operation. Stopping.");
-//     stop();
-//   }
-// }
-
-// void strafe(char *direction, int motor_speed){
-//   if (strcmp(direction, "right") ==0){
-//     // front_left + rear_right forward
-//     for (int i = 1; i < 2; i++){
-//         wheelForward(i, motor_speed);
-//     }
-//     // front_right + rear_left reverse
-//     for (int j = 0; j < num_wheels; j +=3){
-//         wheelReverse(j, motor_speed);
-//     } 
-//   }
-//   else if (strcmp(direction, "left") ==0){
-//     // front_left + rear_right reverse
-//     for (int i = 1; i < 2; i++){
-//       wheelReverse(i, motor_speed);
-//     }
-//     // front_right + rear_left reverse
-//     for (int j = 0; j < num_wheels; j +=3){
-//         wheelForward(j, motor_speed);
-//     } 
-//   }
-//   else{
-//     Serial.println("Wrong_direction input for strafe operation. Stopping.");
-//     stop();
-//   }
-// }
-
-// void Terry(int motor_speed){
-//   for (int i = 0; i < num_wheels; i++){
-//     wheelReverse(i, motor_speed);
-//   }
-// }
-
-// void stop(){
-//   for (int i = 0; i < num_wheels; i++){
-//     wheelForward(i, 0);
-//   } 
-// }
-
-// void initialize(){
-//   spin("CWO", 255); delay(1000);
-//   spin("CCW", 255); delay(1000);
-//   stop();delay(1000);
-// }
-
 void setup() {
 
-  Serial.begin(11500);
+  Serial.begin(115200);
   chassis.init();
 }
 
-void loop() {
+const size_t buffLen = 6;     // length of the expected message chunks (number of characters between two commas) (16-bit int has 5 digits + sign)
+char buffer[buffLen + 1];     // add one for terminating null character
+const size_t cmdBuffLen = 10; // length of the expected command string
+char cmdBuffer[cmdBuffLen + 1];
 
+uint8_t bufferIndex = 0;
+
+const size_t arrayOfIntsLen = 16; // number of ints to receive
+int arrayOfInts[arrayOfIntsLen];
+uint8_t arrayOfIntsIndex = 0;
+
+bool receiving = false;       // set to true when start marker is received, set to false when end marker is received
+bool commandReceived = false; // set to true when command separator is received (or if command buffer is full)
+
+void loop() {
+    if (Serial.available() > 0)
+    {                                    // If there's at least one byte to read
+        char serialByte = Serial.read(); // Read it
+
+        if (isWhiteSpace(serialByte))
+            return; // Ignore whitespace
+
+        if (serialByte == START_MARKER)
+        { // Start marker received: reset indices and flags
+            receiving = true;
+            commandReceived = false;
+            bufferIndex = 0;
+            arrayOfIntsIndex = 0;
+            return;
+        }
+        if (receiving)
+        { // If the start marker has been received
+            if (!commandReceived)
+            { // If the command hasn't been received yet
+                if (serialByte == COMMAND_SEP || serialByte == END_MARKER)
+                {                                  // If the command separator is received
+                    cmdBuffer[bufferIndex] = '\0'; // Terminate the string in the buffer
+                    if (strcmp(cmdBuffer, "MOT-CCW") == 0 || strcmp(cmdBuffer, "MOT-CWO") == 0) // CHANGE THESE TO MOT-CCW OR MOT-CWO
+                    { // Check if the received string is "RAW"
+                        direction = cmdBuffer;
+                        Serial.println(cmdBuffer);
+                    }
+                    else
+                    {
+                        Serial.print("Unknown command (");
+                        Serial.print(cmdBuffer);
+                        Serial.println("):");
+                    }
+                    if (serialByte == END_MARKER)
+                    { // If the end marker is received
+                        Serial.println("Message finished: (No data)");
+                        Serial.println();
+                        receiving = false; // Stop receivinng
+                    }
+                    else
+                    {
+                        bufferIndex = 0; // Reset the index of the buffer to overwrite it with the numbers we're about to receive
+                        commandReceived = true;
+                    }
+                }
+                else if (bufferIndex < cmdBuffLen)
+                {                                          // If the received byte is not the command separator or the end marker and the command buffer is not full
+                    cmdBuffer[bufferIndex++] = serialByte; // Write the new data into the buffer
+                }
+                else
+                { // If the command buffer is full
+                    Serial.println("Error: command buffer full, command is truncated");
+                }
+            }
+            else if (serialByte == VALUE_SEP || serialByte == END_MARKER)
+            { // If the value separator or the end marker is received
+                if (bufferIndex == 0)
+                { // If the buffer is still empty
+                    Serial.println("\t(Empty input)");
+                }
+                else
+                {                               // If there's data in the buffer and the value separator or end marker is received
+                    buffer[bufferIndex] = '\0'; // Terminate the string
+                    speed = parseInt(buffer);   // Parse the input
+                    bufferIndex = 0;            // Reset the index of the buffer to overwrite it with the next number
+                }
+                if (serialByte == END_MARKER)
+                { // If the end marker is received
+                    Serial.println("Message finished:");
+                    printArrayOfInts(); // Print the values
+                    Serial.println();
+                    receiving = false; // Stop receivinng
+                }
+            }
+            else if (bufferIndex < buffLen)
+            {                                       // If the received byte is not a special character and the buffer is not full yet
+                buffer[bufferIndex++] = serialByte; // Write the new data into the buffer
+            }
+            else
+            { // If the buffer is full
+                Serial.println("Error: buffer is full, data is truncated");
+            }
+            
+            move_motor(direction, speed);
+            return; // Optional (check for next byte before executing the loop, may prevent the RX buffer from overflowing)
+        }           // end if (receiving)
+    
+    }               // end if (Serial.available() > 0)
+  
+}
+
+
+bool isWhiteSpace(char character)
+{
+    if (character == ' ')
+        return true;
+    if (character == '\r')
+        return true;
+    if (character == '\n')
+        return true;
+    return false;
+}
+
+int parseInt(char *input)
+{
+    Serial.print("\tInput:\t");
+    Serial.println(input);
+    if (arrayOfIntsIndex >= arrayOfIntsLen)
+    {
+        Serial.println("Error: array of ints is full");
+        return;
+    }
+    int value = atoi(input);
+    arrayOfInts[arrayOfIntsIndex++] = value;
+    return value;
+}
+
+void printArrayOfInts()
+{
+    for (uint8_t i = 0; i < arrayOfIntsIndex; i++)
+    {
+        Serial.print(arrayOfInts[i]);
+        Serial.print(' ');
+    }
+    Serial.println();
+}
+
+void move_motor(char *direction, int speed){
+    analogWrite(pwm_pin, speed);
+    if (strcmp(direction, "MOT-CWO")== 0){
+        digitalWrite(input_1_pin, HIGH);
+        digitalWrite(input_2_pin, LOW);
+        Serial.println("I'm moving CLOCKWISE");
+    }
+    else if (strcmp(direction, "MOT-CCW")== 0){
+        digitalWrite(input_1_pin, LOW);
+        digitalWrite(input_2_pin,HIGH);
+        Serial.println("I'm moving COUNTERCLOCKWISE");        
+    }
+    else{
+        digitalWrite(input_1_pin,LOW);
+        digitalWrite(input_2_pin,LOW);
+        Serial.println("WHY U SO STUUUUPIDDD?????");
+    }
 }

@@ -51,3 +51,12 @@ void Chassis::rotate(int speed) {
     back_right.forward(speed);
     back_left.reverse(speed);
 }
+
+void Chassis::angleDriveRotate(int speed, int angle, int rotation_speed) {
+    float fl_br_speed = sin(radians(angle+45))*speed;
+    float fr_bl_speed = sin(radians(angle+135))*speed;
+    front_left.setSpeed(fl_br_speed + rotation_speed);
+    back_right.setSpeed(fl_br_speed - rotation_speed);
+    front_right.setSpeed(fr_bl_speed - rotation_speed);
+    back_left.setSpeed(fr_bl_speed + rotation_speed);
+}

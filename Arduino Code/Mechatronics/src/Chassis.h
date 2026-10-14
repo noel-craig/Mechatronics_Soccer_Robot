@@ -21,6 +21,7 @@ class Chassis {
 
     void rotate(int speed);
     
+    void angleDriveRotate(int speed, int angle, int rotation_speed);
   private:
     Wheel front_right;
     Wheel front_left;
