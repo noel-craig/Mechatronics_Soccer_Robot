@@ -1,10 +1,11 @@
 #include "Wheel.h"
 
-Wheel::Wheel(int pwm_pin, int in1_pin, int in2_pin, bool dir_invert) {
+Wheel::Wheel(int pwm_pin, int in1_pin, int in2_pin, bool dir_invert, float correction_factor) {
     pwm = pwm_pin;
     in_1 = in1_pin;
     in_2 = in2_pin;
     _reverse = dir_invert;
+    _correction_factor = correction_factor;
 }
 
 void Wheel::init() {
@@ -14,10 +15,11 @@ void Wheel::init() {
 }
 
 void Wheel::setSpeed(int speed) {
-    if(speed > 0) {
-        forward(speed);
-    } else if (speed < 0) {
-        reverse(-speed);
+    int setSpeed = (int) (speed * _correction_factor); // Apply correction factor
+    if(setSpeed > 0) {
+        forward(setSpeed);
+    } else if (setSpeed < 0) {
+        reverse(-setSpeed);
     } else {
         stop();
     }

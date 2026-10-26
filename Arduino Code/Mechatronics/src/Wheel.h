@@ -4,7 +4,7 @@
 
 class Wheel {
   public:
-    Wheel(int pwm_pin, int in1_pin, int in2_pin, bool dir_invert = false);
+    Wheel(int pwm_pin, int in1_pin, int in2_pin, bool dir_invert = false, float correction_factor = 1.0);
     void init();
     void setSpeed(int speed);
     void forward(int speed);
@@ -16,6 +16,7 @@ class Wheel {
     int in_1; // direction control pin 1
     int in_2; // direction control pin 2
     bool _reverse; // whether the wheel is reversed 
+    float _correction_factor; // correction factor for speed adjustment
 };
 
 #endif
