@@ -50,7 +50,7 @@ void setup() {
 
   Serial.begin(115200);
   chassis.init();
-  Serial.println("Chassis initialized");
+//   Serial.println("Chassis initialized");
   chassis.stop();
 
 }
@@ -94,22 +94,22 @@ void loop() {
                     cmdBuffer[bufferIndex] = '\0'; // Terminate the string in the buffer
                     if (strcmp(cmdBuffer, "DRIVE") == 0 || strcmp(cmdBuffer, "STOP") == 0) 
                     { 
-                        Serial.print("Command received: ");
-                        Serial.println(cmdBuffer);
+                        // Serial.print("Command received: ");
+                        // Serial.println(cmdBuffer);
                         // commandReceived = true;
                     }
                     else
                     {
-                        Serial.print("Unknown command (");
-                        Serial.print(cmdBuffer);
-                        Serial.println("):");
+                        // Serial.print("Unknown command (");
+                        // Serial.print(cmdBuffer);
+                        // Serial.println("):");
                         // receiving = false; // Stop receiving
                     }
                     
                     if (serialByte == END_MARKER)
                     { // If the end marker is received
-                        Serial.println("Message finished: (No data)");
-                        Serial.println();
+                        // Serial.println("Message finished: (No data)");
+                        // Serial.println();
                         receiving = false; // Stop receivinng
                     }
                     else
@@ -124,14 +124,14 @@ void loop() {
                 }
                 else
                 { // If the command buffer is full
-                    Serial.println("Error: command buffer full, command is truncated");
+                    // Serial.println("Error: command buffer full, command is truncated");
                 }
             }
             else if (serialByte == VALUE_SEP || serialByte == END_MARKER)
             { // If the value separator or the end marker is received
                 if (bufferIndex == 0)
                 { // If the buffer is still empty
-                    Serial.println("\t(Empty input)");
+                    // Serial.println("\t(Empty input)");
                 }
                 else
                 {                               // If there's data in the buffer and the value separator or end marker is received
@@ -141,9 +141,9 @@ void loop() {
                 }
                 if (serialByte == END_MARKER)
                 { // If the end marker is received
-                    Serial.println("Message finished:");
-                    printArrayOfInts(); // Print the values
-                    Serial.println();
+                    // Serial.println("Message finished:");
+                    // printArrayOfInts(); // Print the values
+                    // Serial.println();
                     receiving = false; // Stop receivinng
                 }
             }
@@ -153,7 +153,7 @@ void loop() {
             }
             else
             { // If the buffer is full
-                Serial.println("Error: buffer is full, data is truncated");
+                // Serial.println("Error: buffer is full, data is truncated");
             }
             
             if(strcmp(cmdBuffer, "DRIVE") == 0 && arrayOfIntsIndex == 3){
@@ -184,11 +184,11 @@ bool isWhiteSpace(char character)
 
 int parseInt(char *input)
 {
-    Serial.print("\tInput:\t");
-    Serial.println(input);
+    // Serial.print("\tInput:\t");
+    // Serial.println(input);
     if (arrayOfIntsIndex >= arrayOfIntsLen)
     {
-        Serial.println("Error: array of ints is full");
+        // Serial.println("Error: array of ints is full");
         return 0;
     }
     int value = atoi(input);
