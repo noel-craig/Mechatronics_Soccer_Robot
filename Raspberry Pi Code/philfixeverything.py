@@ -77,6 +77,13 @@ upper_blue = np.array([130, 255, 255])
 # hat
 lower_yellow = np.array([25, 150, 100])
 upper_yellow = np.array([40, 255, 255])
+# goal corners
+lower_green = np.array([95, 30, 55])
+upper_green = np.array([115, 60, 100])
+
+lower_purple = np.array([260, 50, 40])
+upper_purple = np.array([280, 60, 75])
+# need to add code for finding these and test if the range is good.
 
 #Green data points
 # [100, 55.2, 78.8]
@@ -94,7 +101,7 @@ upper_yellow = np.array([40, 255, 255])
 # [271.8, 56.4, 45.9]
 # [278.7, 58.1, 53.3] 
 
-# TODO: add green and purple cutoffs goals need purp geen
+# TODO: add green and purple cutoffs goals need purp green
 
 
 def initialize():
