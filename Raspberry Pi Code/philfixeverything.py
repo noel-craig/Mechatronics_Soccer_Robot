@@ -40,6 +40,7 @@ import cv2
 import numpy as np
 import RPi.GPIO as GPIO
 import serial
+import gpiozero import AngularServo # used for Servo commands
 
 
 fl_sensor = 23 # front left GPIO pin
@@ -48,8 +49,9 @@ fr_sensor = 17 # front right GPIO pin
 br_sensor = 22 # Back right GPIO pin
 goal_switch = 5 # high = purple left, low = green left
 hat_switch = 6 # high = yellow hat low = blue hat
-hor_servo = 12 # horizonal rotation servo
-vert_servo = 13 # vertical servo
+hor_servo = AngularServo(12, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # horizonal rotation servo
+vert_servo = AngularServo(13, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # vertical servo
+SERVO_SLEEP = 0.01 # time between angles for servos
 ser = None
 picam = None
 i2c = board.I2C()  # uses board.SCL and board.SDAs
@@ -131,6 +133,49 @@ def IR_sensor_read(): # need to get working actually
         fr_val = 1 - GPIO.input(fr_sensor)
         bl_val = 1 - GPIO.input(bl_sensor)
         br_val = 1 - GPIO.input(br_sensor)
+
+
+#================== SERVO =======================================
+def init_servos():
+    """
+    Set both servos to 90 degrees
+    """
+    hor_servo.angle = 90
+    vert_servo.angle = 90
+
+def tilt_cam(angle):
+    """
+    tilt the camera up or down to a specific angle
+    """
+    vert_servo.angle = angle
+
+def rotate_cam(angle):
+    """
+    rotate the camera left and right to a specific angle
+    """
+    hor_servo.angle = angle
+
+def cam_sweep(rotation, min_angle, max_angle):
+    """
+    sweep the camera vertically or horizontally
+    input
+        rotation(int): 0 = hor_servo, 1 = vert_servo
+        min_angle(int): starting angle
+        max_angle(int): final angle
+    """
+    if rotation == 0:
+        for i in range(max_angle - min_angle):
+            hor_servo.angle = min_angle + i
+            time.sleep(SERVO_SLEEP)
+    elif rotation == 1:
+        for i in range(max_angle - min_angle):
+            vert_servo.angle = min_angle + i
+            time.sleep(SERVO_SLEEP)
+    else:
+        init_servos()
+
+
+#================================================================
 
 
 
