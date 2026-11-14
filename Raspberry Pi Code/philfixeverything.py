@@ -16,15 +16,18 @@ The state machine states are outline as:
 
 
 TODO
-add comments
-
+add comments NC
+Servo function (idk maybe a function for sweep and tilt back whatever you think) NC
+Servo initialize in intialize function to straight ahead level (or whatever you think) NC
+actually add scheduler
+split CV into functions to reduce compute time for diff states (almost)
 get purple and green thresh going (test in class)
-split CV into functions to reduce compute time for diff states
-distance estimate based on pixel distance of the goal posts
-work through method of how to tell robot what goal we want to score into (purple left or green left)
+distance estimate based on pixel distance of the goal posts 
+work through method of how to tell robot what goal we want to score into (purple left or green left) switch
 states fully defined for testing (make testing easy with locked in state and somefeedback on if it is working)
 
-
+run ir all times to check if we gonna crash
+plan how we do IR I think if we see, run away from sensor that tripped for a quarter second then back out to previous state
 
 """
 
@@ -43,6 +46,10 @@ fl_sensor = 23 # front left GPIO pin
 bl_sensor = 27 # back left GPIO pin
 fr_sensor = 17 # front right GPIO pin
 br_sensor = 22 # Back right GPIO pin
+goal_switch = 5 # high = purple left, low = green left
+hat_switch = 6 # high = yellow hat low = blue hat
+hor_servo = 12 # horizonal rotation servo
+vert_servo = 13 # vertical servo
 ser = None
 picam = None
 i2c = board.I2C()  # uses board.SCL and board.SDAs
@@ -114,33 +121,20 @@ def initialize():
     GPIO.setup(br_sensor, GPIO.IN)
     picam.start()
     time.sleep(2)
+    # add switch read and set global variables
+    # servo center
 
 
-# IR sensor read
+def IR_sensor_read(): # need to get working actually 
 # Low = Black
         fl_val = 1 - GPIO.input(fl_sensor)
         fr_val = 1 - GPIO.input(fr_sensor)
         bl_val = 1 - GPIO.input(bl_sensor)
         br_val = 1 - GPIO.input(br_sensor)
 
-# main:
-def main():
-    global shutting_down
-    initialize()
-    # TODO start the threads
-    # TODo: prioritize and shit
-    try:
-        while True:
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        shutting_down = True
-        ser.write("<STOP>".encode())
-        picam.close()
-        cv2.destroyAllWindows()
-        ser.close()
-    # TODO: JOIN ALL ThrEADS
 
-# threads
+
+# threads need to add
 def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
     global state, angle_z, next_command
     while not shutting_down:
@@ -192,8 +186,6 @@ def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
                 h_max_yellow_hat = h
                 A_max_yellow_hat = w * h
 
-
-
         # Goal finding 
         frameThreshGreen = cv2.inRange(frameHSV, lower_green, upper_green)
         frameThreshPurple = cv2.inRange(frameHSV, lower_purple, upper_purple)      
@@ -202,7 +194,7 @@ def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
         contoursGreen, hierarchy = cv2.findContours(frameCannyGreen, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         contourspurple, hierarchy = cv2.findContours(frameCannyPurple, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-        x_max_green_goal = 0 # switch to middle x y
+        x_max_green_goal = 0 
         y_max_green_goal = 0
         w_max_green_goal = 0
         h_max_green_goalt = 0
@@ -214,80 +206,76 @@ def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
                 found_green_goal = True
                 x_max_green_goal = x
                 y_max_green_goal = y
-
-
-        
-        x_max_blue_hat = 0
-        y_max_blue_hat = 0
-        w_max_blue_hat = 0
-        h_max_blue_hat = 0
-        found_blue_hat = False
-        A_max_blue_hat = 400
-        for i in contoursYellow:
+        x_max_purple_goal = 0 
+        y_max_purple_goal = 0
+        w_max_purple_goal = 0
+        h_max_purple_goalt = 0
+        found_purple_goal = False
+        A_max_purple_goal = 400
+        for i in contoursPurple:
             x, y, w, h = cv2.boundingRect(i)
-            if w * h > A_max_blue_hat:
-                found_blue_hat = True
-                x_max_blue_hat = x
-                y_max_blue_hat = y
-                w_max_blue_hat = w
-                h_max_blue_hat = h
-                A_max_blue_hat = w * h
-        
+            if w * h > A_max_purple_goal:
+                found_purple_goal = True
+                x_max_purple_goal = x
+                y_max_purple_goal = y
 
-        # Distances:
-        # 2ft ~ r = 88px
-        # 2.5 ft = 74 px
-        # 3ft ~ r = 62px
-        # 3.5 ~ r = 56 px
-        # 4ft ~ r = 47px
-        speed = 0
-        rotation = 0
-        angle = 0
-        # HERE IS WHERE WE DO STATE MACHINE SHIT
-        if state == -2:  # defense mode
-            pass
-        if state == -1:  # init
-            if found_desire_goal and abs(x_desire_goal - 160) < 20:
-                angle_z = 0
-                state = 0
+
+def state_machine():
+
+    # Distances:
+    # 2ft ~ r = 88px
+    # 2.5 ft = 74 px
+    # 3ft ~ r = 62px
+    # 3.5 ~ r = 56 px
+    # 4ft ~ r = 47px
+    speed = 0
+    rotation = 0
+    angle = 0
+    # HERE IS WHERE WE DO STATE MACHINE SHIT
+    if state == -2:  # defense mode
+        pass
+    if state == -1:  # init
+        if found_desire_goal and abs(x_desire_goal - 160) < 20:
+            angle_z = 0
+            state = 0
+        else:
+            speed = 0
+            rotation = 100
+            angle = 0
+    if state == 0:
+        if fl_val + fr_val + bl_val + br_val == 1:
+            # If it is 2 we are facing forward
+            state = 4
+            break
+        if found_ball:
+            state = 1
+            break
+        # if backed up:
+        #     state = -2
+        # add look with servo
+    # This is old code for chasing the ball prolly still good and for state 1
+    if state == 1:
+        if found_ball:
+            predicted_distance = 10.307 - 0.0923 * r_max
+            hor_error = x_max_ball - 160  # hor_error is horizontal error from center screen pixel
+            hor_pos = (7 / (2 * r_max)) * hor_error
+            if predicted_distance > 2.1:
+                angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
             else:
-                speed = 0
-                rotation = 100
                 angle = 0
-        if state == 0:
-            if fl_val + fr_val + bl_val + br_val == 1:
-                # If it is 2 we are facing forward
-                state = 4
-                break
-            if found_ball:
-                state = 1
-                break
-            # if backed up:
-            #     state = -2
-            # add look with servo
-        # This is old code for chasing the ball prolly still good and for state 1
-        if state == 1:
-            if found_ball:
-                predicted_distance = 10.307 - 0.0923 * r_max
-                hor_error = x_max_ball - 160  # hor_error is horizontal error from center screen pixel
-                hor_pos = (7 / (2 * r_max)) * hor_error
-                if predicted_distance > 2.1:
-                    angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
-                else:
-                    angle = 0
-                speed = 255
-                frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                frame = cv2.putText(frame, f"Ball dist: {predicted_distance}ft", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                frame = cv2.putText(frame, f"Ball Size: {r_max}", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            else:
-                frame = cv2.putText(frame, f"Ball dist: Not Detected", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                frame = cv2.putText(frame, f"Ball Size: Not Detected", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-        next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
-        print(next_command)
-        print(f"fl: {fl_val}, fr: {fr_val}, bl: {bl_val}, br: {br_val}")
-        # state 3 is look up and angle to the goal and drive in etc etc
-        # state 4 uses new noel code
-        # TODO add a bunch of flags for which sections of CV we care about
+            speed = 255
+            frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            frame = cv2.putText(frame, f"Ball dist: {predicted_distance}ft", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            frame = cv2.putText(frame, f"Ball Size: {r_max}", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+        else:
+            frame = cv2.putText(frame, f"Ball dist: Not Detected", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            frame = cv2.putText(frame, f"Ball Size: Not Detected", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+    next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
+    print(next_command)
+    print(f"fl: {fl_val}, fr: {fr_val}, bl: {bl_val}, br: {br_val}")
+    # state 3 is look up and angle to the goal and drive in etc etc
+    # state 4 uses new noel code
+    # TODO add a bunch of flags for which sections of CV we care about
 
 
 def drive_update():
@@ -309,3 +297,21 @@ def imu_thingy_for_stuff():
         prev_time = t_now
         angle_z += gyro_z * delta_t
         time.sleep(1 / IMU_FREQ)
+
+
+# main:
+def main():
+    global shutting_down
+    initialize()
+    # TODO start the threads
+    # TODo: prioritize and shit
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        shutting_down = True
+        ser.write("<STOP>".encode())
+        picam.close()
+        cv2.destroyAllWindows()
+        ser.close()
+    # TODO: JOIN ALL ThrEADS
