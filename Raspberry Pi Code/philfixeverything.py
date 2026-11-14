@@ -121,6 +121,7 @@ def initialize():
     GPIO.setup(bl_sensor, GPIO.IN)
     GPIO.setup(fr_sensor, GPIO.IN)
     GPIO.setup(br_sensor, GPIO.IN)
+    init_servos()
     picam.start()
     time.sleep(2)
     # add switch read and set global variables
