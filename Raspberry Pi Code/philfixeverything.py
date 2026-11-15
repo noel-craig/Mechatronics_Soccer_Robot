@@ -17,8 +17,6 @@ The state machine states are outline as:
 
 TODO
 add comments NC
-Servo function (idk maybe a function for sweep and tilt back whatever you think) NC
-Servo initialize in intialize function to straight ahead level (or whatever you think) NC
 actually add scheduler
 split CV into functions to reduce compute time for diff states (almost)
 get purple and green thresh going (test in class)
@@ -112,20 +110,45 @@ upper_purple = np.array([280, 60, 75])
 
 
 def initialize():
-    global ser, picam
+    global ser, picam, GOAL_STATE, HAT_STATE
     ser = serial.Serial('/dev/ttyACM0', 115200)
     GPIO.setmode(GPIO.BCM)
     picam = Picamera2()
-    picam.configure(picam.create_video_configuration(main={"format": 'XRGB8888', "size": (640, 480)}))
-    GPIO.setup(fl_sensor, GPIO.IN)
-    GPIO.setup(bl_sensor, GPIO.IN)
-    GPIO.setup(fr_sensor, GPIO.IN)
-    GPIO.setup(br_sensor, GPIO.IN)
-    init_servos()
+    picam.configure(picam.create_video_configuration(main={"format": 'XRGB8888', "size": (640, 480)})) # 640x480 picam 
+    # init all IR sensors
+    GPIO.setup(fl_sensor, GPIO.IN); GPIO.setup(bl_sensor, GPIO.IN); GPIO.setup(fr_sensor, GPIO.IN); GPIO.setup(br_sensor, GPIO.IN)
+    # init goal switch and hat switch
+    GPIO.setup(goal_switch, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
+    GPIO.setup(hat_switch, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
+    init_servos() # initialize camera servos
+    GOAL_STATE = update_goal_state()
+    HAT_STATE = update_hat_state()
     picam.start()
     time.sleep(2)
     # add switch read and set global variables
-    # servo center
+
+def update_goal_state():
+    """
+    update status of goal switch
+    returns status of high = purple left, low = green left
+    """
+    GOAL_STATE = GPIO.input(goal_switch)
+    if GOAL_STATE:
+        return 1 # HIGH, PURPLE LEFT
+    else:
+        return 0 # LOW, GREEN LEFT
+
+def update_hat_state():
+    """
+    update status of hat switch
+    returns status of # high = yellow hat low = blue hat
+    """
+    HAT_STATE = GPIO.input(hat_switch)
+    if HAT_STATE:
+        return 1 # HIGH, YELLOW HAT
+    else:
+        return 0 # LOW, BLUE HAT
+
 
 
 def IR_sensor_read(): # need to get working actually 
@@ -166,7 +189,7 @@ def cam_sweep(rotation, min_angle, max_angle):
     """
     if rotation == 0:
         for i in range(max_angle - min_angle):
-            hor_servo.angle = min_angle + i
+            hor_servo.angle = min_angle + i 
             time.sleep(SERVO_SLEEP)
     elif rotation == 1:
         for i in range(max_angle - min_angle):
@@ -174,8 +197,6 @@ def cam_sweep(rotation, min_angle, max_angle):
             time.sleep(SERVO_SLEEP)
     else:
         init_servos()
-
-
 #================================================================
 
 
@@ -302,13 +323,13 @@ def state_machine():
     # This is old code for chasing the ball prolly still good and for state 1
     if state == 1:
         if found_ball:
-            predicted_distance = 10.307 - 0.0923 * r_max
+            predicted_distance = 10.307 - 0.0923 * r_max # distance in ft.
             hor_error = x_max_ball - 160  # hor_error is horizontal error from center screen pixel
             hor_pos = (7 / (2 * r_max)) * hor_error
-            if predicted_distance > 2.1:
+            if predicted_distance > 2.1: # if the ball is greater than 2ft away we can determine angle to the ball
                 angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
             else:
-                angle = 0
+                angle = 0 # if we're within 2 ft of the ball, it pretty much takes up the FOV, so set the angle to 0 and CHANGE STATE TO FIND THE GOAL with cam
             speed = 255
             frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
             frame = cv2.putText(frame, f"Ball dist: {predicted_distance}ft", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
@@ -335,7 +356,7 @@ def imu_thingy_for_stuff():
     prev_time = time.time()
     while not shutting_down:
         # Read sensor values
-        gyro_x, gyro_y, gyro_z = mpu.gyro
+        _, _, gyro_z = mpu.gyro
         if abs(acc_y) < 0.2:
             acc_y = 0
         t_now = time.time()
