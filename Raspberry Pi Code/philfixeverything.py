@@ -38,7 +38,7 @@ import cv2
 import numpy as np
 import RPi.GPIO as GPIO
 import serial
-import gpiozero import AngularServo # used for Servo commands
+from gpiozero import AngularServo # used for Servo commands
 
 
 fl_sensor = 23 # front left GPIO pin
@@ -149,15 +149,12 @@ def update_hat_state():
     else:
         return 0 # LOW, BLUE HAT
 
-
-
 def IR_sensor_read(): # need to get working actually 
 # Low = Black
         fl_val = 1 - GPIO.input(fl_sensor)
         fr_val = 1 - GPIO.input(fr_sensor)
         bl_val = 1 - GPIO.input(bl_sensor)
         br_val = 1 - GPIO.input(br_sensor)
-
 
 #================== SERVO =======================================
 def init_servos():
