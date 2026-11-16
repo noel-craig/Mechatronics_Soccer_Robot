@@ -59,8 +59,7 @@ void Chassis::rotateAbout(int speed, int wheel){
         front_right.setSpeed(0);
         back_left.setSpeed(-speed):
         back_right.setSpeed(speed):        
-    }
-
+    }s
     // 2 FL
     else if (wheel == 1){
         front_left.setSpeed(0);
@@ -68,7 +67,6 @@ void Chassis::rotateAbout(int speed, int wheel){
         back_left.setSpeed(-speed):
         back_right.setSpeed(speed):
     }
-
     // 3 RR
     else if (wheel == 2){
         front_left.setSpeed(speed);
