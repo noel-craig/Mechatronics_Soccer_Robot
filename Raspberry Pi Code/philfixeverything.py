@@ -25,7 +25,6 @@ get purple and green thresh going (test in class)
 distance estimate based on pixel distance of the goal posts 
 work through method of how to tell robot what goal we want to score into (purple left or green left) switch
 states fully defined for testing (make testing easy with locked in state and somefeedback on if it is working)
-
 run ir all times to check if we gonna crash
 plan how we do IR I think if we see, run away from sensor that tripped for a quarter second then back out to previous state
 
@@ -107,6 +106,25 @@ upper_purple = np.array([280, 60, 75])
 # [269, 52.1, 46.7]
 # [271.8, 56.4, 45.9]
 # [278.7, 58.1, 53.3] 
+
+
+
+#testing
+"""
+START_STATE = 1        # hard-code which state to start in
+LOCK_STATE  = True     # True = don't actually change state, just print what it WOULD do
+DRY_RUN     = True     # True = print motor commands instead of sending over serial
+SHOW_CAMERA = True     # show the frame with overlays (needs a monitor/VNC)
+
+state = START_STATE
+
+def set_state(new_state):
+    global state
+    if new_state != state:
+        print(f"[STATE] {state} -> {new_state}" + (" (locked, ignored)" if LOCK_STATE else ""))
+        if not LOCK_STATE:
+            state = new_state
+"""
 
 
 def initialize():
@@ -246,10 +264,10 @@ def state_machine():
         if fl_val + fr_val + bl_val + br_val == 1:
             # If it is 2 we are facing forward
             state = 4
-            break
+            return
         if found_ball:
             state = 1
-            break
+            return
         # if backed up:
         #     state = -2
         # add look with servo
