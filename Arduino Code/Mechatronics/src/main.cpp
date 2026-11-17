@@ -11,6 +11,8 @@
 // HARDWARE PINS
 const int right_signal_pin = A0;
 const int left_signal_pin = A1;
+const int switch1 = 2;
+const int switch2 = 3;
 
 void move_motor(char *direction, int speed);
 bool isWhiteSpace(char character);
@@ -52,6 +54,10 @@ void setup() {
   chassis.init();
 //   Serial.println("Chassis initialized");
   chassis.stop();
+  pinMode(switch1, OUTPUT);
+  pinMode(switch2, OUTPUT);
+  digitalWrite(switch1, HIGH);
+  digitalWrite(switch2, HIGH);
 
 }
 

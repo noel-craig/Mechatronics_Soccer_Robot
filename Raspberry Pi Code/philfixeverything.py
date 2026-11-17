@@ -41,6 +41,7 @@ import numpy as np
 import RPi.GPIO as GPIO
 import serial
 from gpiozero import AngularServo # used for Servo commands
+import random
 
 
 fl_sensor = 23 # front left GPIO pin
@@ -48,7 +49,7 @@ bl_sensor = 27 # back left GPIO pin
 fr_sensor = 17 # front right GPIO pin
 br_sensor = 22 # Back right GPIO pin
 goal_switch = 5 # high = purple left, low = green left
-hat_switch = 6 # high = yellow hat low = blue hat
+hat_switch = 6 # high = yellow hat low = orange hat
 hor_servo = AngularServo(12, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # horizonal rotation servo
 vert_servo = AngularServo(13, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # vertical servo
 SERVO_SLEEP = 0.01 # time between angles for servos
@@ -64,6 +65,7 @@ angle_z = 0
 shutting_down = False
 next_command = "<STOP>"
 should_kick = False
+last_motor_cmd_time = 0
 
 # openCV global variables
 found_ball = False
@@ -165,7 +167,7 @@ def update_goal_state():
 def update_hat_state():
     """
     update status of hat switch
-    returns status of # high = yellow hat low = blue hat
+    returns status of # high = yellow hat low = orange hat
     """
     HAT_STATE = GPIO.input(hat_switch)
     if HAT_STATE:
@@ -179,18 +181,28 @@ def IR_sensor_read(): # need to get working actually
         fr_val = 1 - GPIO.input(fr_sensor)
         bl_val = 1 - GPIO.input(bl_sensor)
         br_val = 1 - GPIO.input(br_sensor)
+
+        if (fl_val or fr_val or bl_val or br_val):
+            speed = 120
+            rotation = 0
+            if(fl_val):
+                angle = -135
+            elif(fr_val):
+                angle = 135
+            elif(bl_val):
+                angle = -45
+            elif(br_val):
+                angle = 45
+
+            # write drive away command
+            command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
+            ser.write(command.encode())
+            # wait 1/4 sec
+            time.sleep(0.25) # check if this is long enough
+            # stop it 
+            ser.write("<STOP>".encode())
+
         
-        # if fl drive back right
-        # if fr drive back left
-        # if bl drive front right
-        # if br drive front left
-        
-        # dont think we car if 2 hit perfectly
-        
-def imu_gyro_read():
-    # set up i2c connection
-    # what addr to call to get gyro heading
-    # return heading
 
 #================== SERVO =======================================
 def init_servos():
@@ -262,7 +274,7 @@ def process_frame(targets):
         found_ball = False
 
     
-    # case check for hat high yellow low blue
+    # case check for hat high yellow low orange
     if "hat" in targets:
         if HAT_STATE:
             # yellow hat on enemy
@@ -322,7 +334,7 @@ def process_frame(targets):
     """
                     
 # threads need to add
-# walk thruogh to get rid of this
+# walk through to get rid of this
 def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
     global state, angle_z, next_command
     while not shutting_down:
@@ -403,12 +415,8 @@ def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
                 x_max_purple_goal = x
                 y_max_purple_goal = y
         
-        # care about if we 
-        if GOAL_STATE == 1:
             
-
-def state_machine():
-
+def state_machine(state):
     # Distances:
     # 2ft ~ r = 88px
     # 2.5 ft = 74 px
@@ -419,23 +427,46 @@ def state_machine():
     rotation = 0
     angle = 0
     # HERE IS WHERE WE DO STATE MACHINE SHIT
-    if state == -2:  # defense mode
+    while state == -2:  # defense mode
         pass
-    if state == -1:  # init
+    while state == -1:  # init
+        print(state)
         process_frame(["goal"])
         if found_green_goal and found_purple_goal:
-            # center between x of each is abs(centerofgoals - 160) < 20
-            # if statement for this and then do remaining
-        
-                heading = imu_gyro_read() # sync imu gyro heading 
-                GOAL_HEADING = heading
-                state = 0
+            print("found both goals")
+            
+            if GOAL_STATE: # purple left goal
+                if green_x - purple_x > 0: # green is further right on camera than purple
+                    heading = imu_thingy_for_stuff() # save heading when we see the goal we want
+                    print(f"heading 4 goal {heading}")
+                    GOAL_HEADING = heading
+                    #state = 0
+                else: # need to turn around we see the wrong goal
+                    pass
+                    #turn around faster
+            else: # green left goal
+                if purple_x - green_x > 0:
+                    heading = imu_thingy_for_stuff() # save the heading 
+                    print(f"heading 4 goal {heading}")
+                    GOAL_HEADING = heading
+                    #state = 0
+
         else:
+            # didnt find goals keep spinning
+            rand = random.randint(1,1000)
             speed = 0
-            rotation = 100
             angle = 0
+            if rand % 2 ==0:
+                # rotate right
+                rotation = 90
+                send_command(speed, angle,rotation)
+            else: 
+                # rotate left
+                rotation = -90
+                send_command(speed,angle,rotation)
+            drive_update()
         # need to write to motor to spin 
-    if state == 0:
+    while state == 0:
         """
         Finding Ball (look around + back up till ball found then state 1)
         
@@ -460,7 +491,7 @@ def state_machine():
         #     state = -2
         # add look with servo
     # This is old code for chasing the ball prolly still good and for state 1
-    if state == 1:
+    while state == 1:
         """
         Going To Ball (angle drive until distance is small then state 2) (if lost go to state 0)
         
@@ -491,7 +522,7 @@ def state_machine():
     next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
     print(next_command)
     
-    if state ==2:
+    while state ==2:
         """
         Rotating for kick (center goal in frame with rotation then got to state 3)
         
@@ -507,27 +538,35 @@ def state_machine():
     # state 4 uses new noel code
     # TODO add a bunch of flags for which sections of CV we care about
 
+def send_command(speed, angle, rotation):
+    next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
+
+
 
 def drive_update():
-    while not shutting_down:
+    curr_time = time.time_ns()
+    if curr_time - last_motor_cmd_time > 1e8:
         ser.write(next_command.encode())
-        time.sleep(1 / MOTOR_FREQ)
-        # not sleep but add timing and check last time write and make sure enough time
-        # passed between current and the last motor write 
+        last_motor_cmd_time = curr_time
+
+    else: 
+        time.sleep(1/30)
+    # time.sleep(1 / MOTOR_FREQ)
+    # not sleep but add timing and check last time write and make sure enough time
+    # passed between current and the last motor write 
 
 def imu_thingy_for_stuff():
     global angle_z
     prev_time = time.time()
-    while not shutting_down:
-        # Read sensor values
-        _, _, gyro_z = mpu.gyro
-        if abs(acc_y) < 0.2:
-            acc_y = 0
-        t_now = time.time()
-        delta_t = t_now - prev_time
-        prev_time = t_now
-        angle_z += gyro_z * delta_t
-        time.sleep(1 / IMU_FREQ)
+    # Read sensor values
+    _, _, gyro_z = mpu.gyro
+    if abs(acc_y) < 0.2:
+        acc_y = 0
+    t_now = time.time()
+    delta_t = t_now - prev_time
+    prev_time = t_now
+    angle_z += gyro_z * delta_t
+    time.sleep(1 / IMU_FREQ)
 
 
 # main:
@@ -536,6 +575,9 @@ def main():
     initialize()
     # TODO start the threads
     # TODo: prioritize and shit
+    # hard code state for testing 
+    state = -1
+    state_machine(state)
     try:
         while True:
             time.sleep(0.5)
