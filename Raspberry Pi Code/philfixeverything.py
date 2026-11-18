@@ -65,7 +65,7 @@ angle_z = 0
 shutting_down = False
 next_command = "<STOP>"
 should_kick = False
-last_motor_cmd_time = 0
+last_motor_cmd_time = time.time_ns()
 
 # openCV global variables
 found_ball = False
@@ -88,8 +88,8 @@ min_goal_area = 200 # test if this works goals would be pretty small far away
 
 heading = 0
 GOAL_HEADING = 90 # set to due east so goal away from mountains. idk we can change 
-state = 0
-
+state = -1
+prev_time = time.time()
 
 # constants for colors
 # stupid wrap around need 0-5 and 170 -180 ball
@@ -100,13 +100,22 @@ up_upper_red = np.array([180, 255, 255])
 # hat
 lower_yellow = np.array([25, 150, 100])
 upper_yellow = np.array([40, 255, 255])
-lower_orange = np.array([18, 90, 63])
-upper_orange = np.array([30, 100, 90])
+# old values were color picker scale (H 0-360, S 0-100, V 0-100)
+# converted to opencv scale (H 0-179, S 0-255, V 0-255): H/2, S*2.55, V*2.55
+# lower rounded down, upper rounded up
+# lower_orange = np.array([18, 90, 63])
+# upper_orange = np.array([30, 100, 90])
+lower_orange = np.array([9, 229, 160])
+upper_orange = np.array([15, 255, 230])
 # goal corners
-lower_green = np.array([95, 30, 55])
-upper_green = np.array([115, 60, 100])
-lower_purple = np.array([260, 50, 40])
-upper_purple = np.array([280, 60, 75])
+# lower_green = np.array([95, 30, 55])
+# upper_green = np.array([115, 60, 100])
+# lower_purple = np.array([260, 50, 40])
+# upper_purple = np.array([280, 60, 75])
+lower_green = np.array([47, 76, 140])
+upper_green = np.array([58, 153, 255])
+lower_purple = np.array([130, 127, 102])
+upper_purple = np.array([140, 153, 192])
 # need to add code for finding these and test if the range is good.
 
 # orange data points
@@ -182,6 +191,8 @@ def IR_sensor_read(): # need to get working actually
         bl_val = 1 - GPIO.input(bl_sensor)
         br_val = 1 - GPIO.input(br_sensor)
 
+        print(f"fl: {fl_val}, fr: {fr_val}, bl: {bl_val}, br: {br_val}")
+
         if (fl_val or fr_val or bl_val or br_val):
             speed = 120
             rotation = 0
@@ -250,6 +261,8 @@ def process_frame(targets):
     global found_hat, hat_x, hat_y
     global found_green_goal, green_x, green_y
     global found_purple_goal, purple_x, purple_y
+    # reset if it saw something last loop
+    found_ball = found_hat = found_green_goal = found_purple_goal = False
     
     frame = picam.capture_array()
     frame = cv2.resize(frame, (320, 240))
@@ -268,10 +281,6 @@ def process_frame(targets):
             if cv2.contourArea(ball) > min_ball_area: # above minimum size
                 ((ball_x, ball_y), ball_r) = cv2.minEnclosingCircle(ball) # get coords
                 found_ball = True
-            else:
-                found_ball = False
-    else: 
-        found_ball = False
 
     
     # case check for hat high yellow low orange
@@ -285,9 +294,7 @@ def process_frame(targets):
                 if cv2.contourArea(hat) > min_hat_area:
                     ((hat_x, hat_y), hat_r) = cv2.minEnclosingCircle(hat)
                     found_hat = True
-                else:
-                    found_hat = False
-        else: 
+        else:
             # orange hat on enemy
             frameThreshOrange = cv2.inRange(frameHSV, lower_orange, upper_orange)
             contoursOrange, hierarchy = cv2.findContours(frameThreshOrange, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -296,10 +303,6 @@ def process_frame(targets):
                 if cv2.contourArea(hat) > min_hat_area:
                     ((hat_x, hat_y), hat_r) = cv2.minEnclosingCircle(hat)
                     found_hat = True
-                else:
-                    found_hat = False   
-    else:
-        found_hat = False
         
     #case for goal blocks looking for both always and just output location
     if "goal" in targets:
@@ -312,18 +315,11 @@ def process_frame(targets):
             if cv2.contourArea(green) > min_goal_area:
                 ((green_x, green_y),green_r) = cv2.minEnclosingCircle(green)
                 found_green_goal = True
-            else:
-                found_green_goal = False
         if contoursPurple:
             purple = max(contoursPurple, key=cv2.contourArea)    
             if cv2.contourArea(purple) > min_goal_area:
                 ((purple_x, purple_y),purple_r) = cv2.minEnclosingCircle(purple)
                 found_purple_goal = True
-            else:
-                found_purple_goal = False
-    else:
-        found_purple_goal = False
-        found_green_goal = False
         
     """ for troubleshooting 
     frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
@@ -416,134 +412,236 @@ def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
                 y_max_purple_goal = y
         
             
-def state_machine(state):
+def state_machine():
     # Distances:
     # 2ft ~ r = 88px
     # 2.5 ft = 74 px
     # 3ft ~ r = 62px
     # 3.5 ~ r = 56 px
     # 4ft ~ r = 47px
-    speed = 0
-    rotation = 0
-    angle = 0
-    # HERE IS WHERE WE DO STATE MACHINE SHIT
-    while state == -2:  # defense mode
-        pass
-    while state == -1:  # init
-        print(state)
-        process_frame(["goal"])
-        if found_green_goal and found_purple_goal:
-            print("found both goals")
-            
-            if GOAL_STATE: # purple left goal
-                if green_x - purple_x > 0: # green is further right on camera than purple
-                    heading = imu_thingy_for_stuff() # save heading when we see the goal we want
-                    print(f"heading 4 goal {heading}")
-                    GOAL_HEADING = heading
-                    #state = 0
-                else: # need to turn around we see the wrong goal
-                    pass
-                    #turn around faster
-            else: # green left goal
-                if purple_x - green_x > 0:
-                    heading = imu_thingy_for_stuff() # save the heading 
-                    print(f"heading 4 goal {heading}")
-                    GOAL_HEADING = heading
-                    #state = 0
+    global state, GOAL_HEADING
 
-        else:
-            # didnt find goals keep spinning
-            rand = random.randint(1,1000)
-            speed = 0
-            angle = 0
-            if rand % 2 ==0:
-                # rotate right
-                rotation = 90
-                send_command(speed, angle,rotation)
-            else: 
-                # rotate left
-                rotation = -90
-                send_command(speed,angle,rotation)
-            drive_update()
-        # need to write to motor to spin 
-    while state == 0:
-        """
-        Finding Ball (look around + back up till ball found then state 1)
-        
-        check ir
-        check camera for ball
-        cam scan
-        if found_ball true, change to state 1  
-        if ball too damn close, state 2
-        """
-        """
-        #if fl_val + fr_val + bl_val + br_val == 1:
-            # If it is 2 we are facing forward
-            state = 4
-            break
-        """
-        IR_sensor_read()
-        process_frame(["ball"])
-        if found_ball:
-            state = 1
-            return
-        # if backed up:
-        #     state = -2
-        # add look with servo
-    # This is old code for chasing the ball prolly still good and for state 1
-    while state == 1:
-        """
-        Going To Ball (angle drive until distance is small then state 2) (if lost go to state 0)
-        
-        check ir
-        check camera update for ball location
-        do drive to ball code,
-        if found ball false, go to state 0 
-        process_frame(["ball"])
-        """
-        
-        if found_ball:
-            predicted_distance = 10.307 - 0.0923 * ball_r # distance in ft.
-            hor_error = ball_x - 160  # hor_error is horizontal error from center screen pixel
-            hor_pos = (7 / (2 * ball_r)) * hor_error
-            if predicted_distance > 2.1: # if the ball is greater than 2ft away we can determine angle to the ball
-                angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
-            else:
-                angle = 0 # if we're within 2 ft of the ball, it pretty much takes up the FOV, so set the angle to 0 and CHANGE STATE TO FIND THE GOAL with cam
-            speed = 255
+    # pick spin direction once so it doesnt flip every frame
+    spin_dir = random.choice([-90, 90]) # random left or right direction
+
+    while not shutting_down:
+        speed = 0
+        rotation = 0
+        angle = 0
+        # HERE IS WHERE WE DO STATE MACHINE SHIT
+        # run imu for gyro heading
+        angle_z = imu_thingy_for_stuff()
+
+        if state == -2:  # defense mode
+            pass
+            # """
+            # Defense: sit between ball and our goal, switch to 1 when ball found
+            # """
+            # IR_sensor_read()
+            # process_frame(["ball", "hat"])
+            # if found_ball:
+            #     state = 1
+            # else:
+            #     # slowly rotate back toward our own goal (opposite of GOAL_HEADING)
+            #     defend_heading = GOAL_HEADING + 180
+            #     heading_error = (defend_heading - angle_z + 180) % 360 - 180 # wrap to -180..180
+            #     if abs(heading_error) > 10:
+            #         send_command(0, 0, 60 if heading_error > 0 else -60) # check rotation sign
+            #     else:
+            #         send_command(0, 0, 0)
+            #     drive_update()
+            #     print(f"defending, heading err {heading_error:.1f}")
+        elif state == -1:  # init
+            print(state)
+            process_frame(["goal"])
+            if found_green_goal and found_purple_goal:
+                print("found both goals")
             
-            """ for troubleshooting 
-            frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            frame = cv2.putText(frame, f"Ball dist: {predicted_distance}ft", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            frame = cv2.putText(frame, f"Ball Size: {r_max}", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            frame = cv2.putText(frame, f"Ball dist: Not Detected", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-            frame = cv2.putText(frame, f"Ball Size: Not Detected", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                if GOAL_STATE: # purple left goal
+                    if green_x - purple_x > 0: # green is further right on camera than purple
+                        heading = imu_thingy_for_stuff() # save heading when we see the goal we want
+                        print(f"heading 4 goal {heading}")
+                        GOAL_HEADING = heading
+                        send_command(0,0,0)
+                        ser.write("<STOP>".encode())
+                        #state = 0
+                    else: # need to turn around we see the wrong goal
+                        send_command(0,0,spin_dir)
+                        drive_update()
+                        #turn around faster
+                else: # green left goal
+                    if purple_x - green_x > 0:
+                        heading = imu_thingy_for_stuff() # save the heading 
+                        print(f"heading 4 goal {heading}")
+                        GOAL_HEADING = heading
+                        send_command(0,0,0)
+                        ser.write("<STOP>".encode())
+                        #state = 0
+                    else: 
+                        send_command(0,0,spin_dir)
+                        drive_update()
+
+
+            else:
+                # didnt find goals keep spinning
+                print("no goals, spinning")
+                send_command(0, 0, spin_dir)
+                drive_update()
+        elif state == 0:
             """
-    next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
-    print(next_command)
+            Finding Ball (look around + back up till ball found then state 1)
+        
+            check ir
+            check camera for ball
+            cam scan
+            if found_ball true, change to state 1  
+            if ball too damn close, state 2
+            """
+            IR_sensor_read()
+            process_frame(["ball"])
+            if found_ball:
+                state = 1
+            # if backed up:
+            #     state = -2
+            # add look with servo
+
+            # if found_ball:
+            #     print(f"found ball x:{ball_x:.0f} r:{ball_r:.0f}")
+            #     if ball_r > 88: # closer than ~2ft, skip straight to lining up the kick
+            #         state = 2
+            #     else:
+            #         state = 1
+            # else:
+            #     # spin in place to look for the ball
+            #     print("looking for ball")
+            #     send_command(0, 0, spin_dir)
+            #     drive_update()
+            #     # option: stop and sweep camera instead of spinning robot
+            #     # send_command(0, 0, 0); drive_update()
+            #     # cam_sweep(0, 30, 150); rotate_cam(90)
+            #     # option: if spun a full circle (use angle_z) and no ball, back up or go to defense
+            #     # if abs(angle_z - search_start_angle) > 360:
+            #     #     state = -2
+        # This is old code for chasing the ball prolly still good and for state 1
+        elif state == 1:
+            """
+            Going To Ball (angle drive until distance is small then state 2) (if lost go to state 0)
+        
+            check ir
+            check camera update for ball location
+            do drive to ball code,
+            if found ball false, go to state 0 
+            process_frame(["ball"])
+            """
+            IR_sensor_read()
+            process_frame(["ball"])
+        
+            if found_ball:
+                predicted_distance = 10.307 - 0.0923 * ball_r # distance in ft.
+                hor_error = ball_x - 160  # hor_error is horizontal error from center screen pixel
+                hor_pos = (7 / (2 * ball_r)) * hor_error
+                if predicted_distance > 2.1: # if the ball is greater than 2ft away we can determine angle to the ball
+                    angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
+                else:
+                    angle = 0 # if we're within 2 ft of the ball, it pretty much takes up the FOV, so set the angle to 0 and CHANGE STATE TO FIND THE GOAL with cam
+                speed = 255
+                # send_command(speed, angle, rotation)
+                # drive_update()
+                # print(f"dist {predicted_distance:.2f}ft  angle {angle:.1f}  cmd {next_command}")
+                # if predicted_distance <= 2.1: # close enough, line up the kick
+                #     send_command(0, 0, 0)
+                #     drive_update()
+                #     state = 2
+
+            else:
+                send_command(0,0,0)
+                drive_update()
+                print("lost ball")
+                state = 0 # go back to find the ball now that we lost it
+                """ for troubleshooting 
+                frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                frame = cv2.putText(frame, f"Ball dist: {predicted_distance}ft", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                frame = cv2.putText(frame, f"Ball Size: {r_max}", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                frame = cv2.putText(frame, f"Ball dist: Not Detected", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                frame = cv2.putText(frame, f"Ball Size: Not Detected", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                """
     
-    while state ==2:
-        """
-        Rotating for kick (center goal in frame with rotation then got to state 3)
+        elif state ==2:
+            """
+            Rotating for kick (center goal in frame with rotation then got to state 3)
         
-        check ir
-        check camera for ball and goal pieces ()
-            if one goal piece check with gyro for direction of our desired goal
-        if found ball and both goal, drive to put goal intersection 
+            check ir
+            check camera for ball and goal pieces ()
+                if one goal piece check with gyro for direction of our desired goal
+            if found ball and both goal, drive to put goal intersection 
           
-        """
-        
-    print(f"fl: {fl_val}, fr: {fr_val}, bl: {bl_val}, br: {br_val}")
-    # state 3 is look up and angle to the goal and drive in etc etc
-    # state 4 uses new noel code
-    # TODO add a bunch of flags for which sections of CV we care about
+            """
+            IR_sensor_read()
+            process_frame(["ball","goal"])
+
+            # if not found_ball:
+            #     print("lost ball while lining up")
+            #     state = 0
+            # elif found_green_goal and found_purple_goal:
+            #     goal_center_x = (green_x + purple_x) / 2
+            #     goal_error = goal_center_x - ball_x  # want goal center lined up behind the ball
+            #     ball_error = ball_x - 160            # keep ball centered in frame
+            #     print(f"goal err {goal_error:.0f}  ball err {ball_error:.0f}")
+            #     if abs(goal_error) < 15 and abs(ball_error) < 20:
+            #         send_command(0, 0, 0)
+            #         drive_update()
+            #         state = 3
+            #     else:
+            #         # orbit the ball: strafe sideways while rotating to keep ball centered
+            #         strafe_angle = 90 if goal_error < 0 else -90   # check sign, negative angle = right
+            #         rotation = -0.5 * ball_error                   # check sign
+            #         send_command(120, strafe_angle, rotation)
+            #         drive_update()
+            # else:
+            #     # cant see both goal posts, use gyro to turn toward GOAL_HEADING
+            #     heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
+            #     print(f"no goal in view, heading err {heading_error:.1f}")
+            #     strafe_angle = 90 if heading_error > 0 else -90    # check sign
+            #     send_command(120, strafe_angle, -0.5 * (ball_x - 160))
+            #     drive_update()
+
+        # elif state == 3:
+        #     """
+        #     Driving into goal (drive straight at goal, kick if enemy hat seen, then state 0)
+        #     """
+        #     IR_sensor_read()
+        #     tilt_cam(110) # look up at goal, check angle
+        #     process_frame(["ball", "goal", "hat"])
+        #     if found_green_goal and found_purple_goal:
+        #         goal_center_x = (green_x + purple_x) / 2
+        #         rotation = -0.5 * (goal_center_x - 160) # steer toward goal center, check sign
+        #         send_command(255, 0, rotation)
+        #     else:
+        #         # hold gyro heading
+        #         heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
+        #         send_command(255, 0, 2 * heading_error) # check sign
+        #     drive_update()
+        #     print(f"driving to goal cmd {next_command}  hat {found_hat}")
+        #     if found_hat:
+        #         print("enemy seen, kick")
+        #         # ser.write("<KICK>".encode()) # arduino does not have a KICK command yet
+        #         tilt_cam(90)
+        #         state = 0
+        #     # if not found_ball: (ball may be hidden under camera when tilted up)
+        #     #     tilt_cam(90)
+        #     #     state = 0
+
+        # state 4 uses new noel code
+        # TODO add a bunch of flags for which sections of CV we care about
 
 def send_command(speed, angle, rotation):
+    global next_command
     next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
 
 
 
 def drive_update():
+    global last_motor_cmd_time
     curr_time = time.time_ns()
     if curr_time - last_motor_cmd_time > 1e8:
         ser.write(next_command.encode())
@@ -556,35 +654,41 @@ def drive_update():
     # passed between current and the last motor write 
 
 def imu_thingy_for_stuff():
-    global angle_z
-    prev_time = time.time()
+    global angle_z, prev_time
     # Read sensor values
     _, _, gyro_z = mpu.gyro
-    if abs(acc_y) < 0.2:
-        acc_y = 0
+    gyro_z = np.degrees(gyro_z)
+    if abs(gyro_z) < 0.5:
+        gyro_z = 0
     t_now = time.time()
     delta_t = t_now - prev_time
     prev_time = t_now
     angle_z += gyro_z * delta_t
-    time.sleep(1 / IMU_FREQ)
+    return angle_z
 
 
 # main:
 def main():
-    global shutting_down
+    global shutting_down, state
     initialize()
     # TODO start the threads
     # TODo: prioritize and shit
     # hard code state for testing 
     state = -1
-    state_machine(state)
+    
     try:
+        state_machine()
         while True:
             time.sleep(0.5)
     except KeyboardInterrupt:
+        print("fine we will stop, damn calm down")
+    finally:
         shutting_down = True
         ser.write("<STOP>".encode())
         picam.close()
         cv2.destroyAllWindows()
         ser.close()
+        GPIO.cleanup()
     # TODO: JOIN ALL ThrEADS
+
+if __name__ == "__main__": main()
