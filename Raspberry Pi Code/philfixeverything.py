@@ -162,6 +162,7 @@ def initialize():
     HAT_STATE = update_hat_state()
     picam.start()
     time.sleep(2)
+    print("init complete")
     # add switch read and set global variables
 
 def update_goal_state():
@@ -171,8 +172,10 @@ def update_goal_state():
     """
     GOAL_STATE = GPIO.input(goal_switch)
     if GOAL_STATE:
+        print("goal Switch is high this way/purple left")
         return 1 # HIGH, PURPLE LEFT
     else:
+        print("goal switch is low/green left")
         return 0 # LOW, GREEN LEFT
 
 def update_hat_state():
@@ -182,8 +185,10 @@ def update_hat_state():
     """
     HAT_STATE = GPIO.input(hat_switch)
     if HAT_STATE:
+        print("hat switch high/yellow")
         return 1 # HIGH, YELLOW HAT
     else:
+        print("hat switch low/orange")
         return 0 # LOW, ORANGE HAT
 
 def IR_sensor_read(): # need to get working actually 
@@ -331,88 +336,6 @@ def process_frame(targets):
     frame = cv2.putText(frame, f"Ball Size: Not Detected", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
     """
                     
-# walk through to get rid of this
-def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
-    global state, angle_z, next_command
-    while not shutting_down:
-        # THIS IS THE OLD BLUE AND YELLOW CODE SO WE NEED NEW HAT COLORS AND GOAL IDENTIFICATION
-        frame = picam.capture_array()
-        frame = cv2.resize(frame, (320, 240))
-        frameBlur = cv2.blur(frame, (9, 9))
-        frameHSV = cv2.cvtColor(frameBlur, cv2.COLOR_BGR2HSV)
-
-        # ball == True
-        mask1 = cv2.inRange(frameHSV, low_lower_red, low_upper_red)
-        mask2 = cv2.inRange(frameHSV, up_lower_red, up_upper_red)
-        frameThreshRed = mask1 + mask2
-        contoursRed, hierarchy = cv2.findContours(frameThreshRed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        # find the ball if ball == True
-        
-        y_max_ball = 0
-        r_max = 20
-        found_ball = False
-        for i in contoursRed:
-            ((x, y), r) = cv2.minEnclosingCircle(i)
-            if r > r_max:
-                found_ball = True
-                x_max_ball = x
-                y_max_ball = y
-                r_max = r
-
-        # Hats (need switch input for what color hat to look for or maybe run speed tests and do both) if hat == True
-        # read global variable for what hat color is enemy if we do this
-
-        ###### add orange 
-        frameThreshYellow = cv2.inRange(frameHSV, lower_yellow, upper_yellow)
-        contoursYellow, hierarchy = cv2.findContours(frameThreshYellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        x_max_yellow_hat = 0 # switch to just middle x and y 
-        y_max_yellow_hat = 0
-        w_max_yellow_hat = 0
-        h_max_yellow_hat = 0
-        found_yellow_hat = False
-        A_max_yellow_hat = 400
-        for i in contoursYellow:
-            x, y, w, h = cv2.boundingRect(i)
-            if w * h > A_max_yellow_hat:
-                found_yellow_hat = True
-                x_max_yellow_hat = x
-                y_max_yellow_hat = y
-                w_max_yellow_hat = w
-                h_max_yellow_hat = h
-                A_max_yellow_hat = w * h
-
-        # Goal finding 
-        frameThreshGreen = cv2.inRange(frameHSV, lower_green, upper_green)
-        frameThreshPurple = cv2.inRange(frameHSV, lower_purple, upper_purple)      
-        contoursGreen, hierarchy = cv2.findContours(frameThreshGreen, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contoursPurple, hierarchy = cv2.findContours(frameThreshPurple, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        x_max_green_goal = 0 
-        y_max_green_goal = 0
-        w_max_green_goal = 0
-        h_max_green_goal = 0
-        found_green_goal = False 
-        A_max_green_goal = 200 # play with size since these should be small
-        for i in contoursGreen:
-            x, y, w, h = cv2.boundingRect(i)
-            if w * h > A_max_green_goal:
-                found_green_goal = True
-                x_max_green_goal = x
-                y_max_green_goal = y
-        x_max_purple_goal = 0 
-        y_max_purple_goal = 0
-        w_max_purple_goal = 0
-        h_max_purple_goal = 0
-        found_purple_goal = False
-        A_max_purple_goal = 200 # play with size since these should be small
-        for i in contoursPurple:
-            x, y, w, h = cv2.boundingRect(i)
-            if w * h > A_max_purple_goal:
-                found_purple_goal = True
-                x_max_purple_goal = x
-                y_max_purple_goal = y
-        
-            
 def state_machine():
     # Distances:
     # 2ft ~ r = 88px
@@ -424,6 +347,7 @@ def state_machine():
 
     # pick spin direction once so it doesnt flip every frame
     spin_dir = random.choice([-90, 90]) # random left or right direction
+    print(f"spin dir is {spin_dir}")
 
     while not shutting_down:
         speed = 0
@@ -441,6 +365,7 @@ def state_machine():
             """
             IR_sensor_read()
             process_frame(["ball", "goal"])
+            imu_thingy_for_stuff()
             # how far off we are from GOAL_HEADING, wrapped to -180..180
             heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
 
@@ -462,6 +387,7 @@ def state_machine():
                     # at our end of the field, stop and wait for the ball
                     print("defense: in position")
                     send_command(0, 0, 0)
+                    # can go into wiggle
                 drive_update()
             else:
                 # facing roughly right but cant see both posts, rotate toward GOAL_HEADING to find them
@@ -469,7 +395,7 @@ def state_machine():
                 send_command(0, 0, 60 if heading_error > 0 else -60) # check rotation sign
                 drive_update()
         elif state == -1:  # init
-            print(state)
+            #print(f"the state is {state}")
             process_frame(["goal"])
             if found_green_goal and found_purple_goal:
                 print("found both goals")
@@ -501,7 +427,7 @@ def state_machine():
 
             else:
                 # didnt find goals keep spinning
-                print("no goals, spinning")
+                #print("no goals, spinning")
                 send_command(0, 0, spin_dir)
                 drive_update()
         elif state == 0:
