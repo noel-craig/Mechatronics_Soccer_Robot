@@ -84,6 +84,8 @@ purple_y = 0
 min_ball_area = 1250
 min_hat_area = 400
 min_goal_area = 200 # test if this works goals would be pretty small far away
+DEFENSE_GOAL_PX = 40 # CALIBRATE: goal post x separation (px) when we are back at our end of the field
+DEFENSE_HEADING_TOL = 90 # must be within this many degrees of GOAL_HEADING to back up
 
 
 heading = 0
@@ -329,7 +331,6 @@ def process_frame(targets):
     frame = cv2.putText(frame, f"Ball Size: Not Detected", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
     """
                     
-# threads need to add
 # walk through to get rid of this
 def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
     global state, angle_z, next_command
@@ -432,25 +433,41 @@ def state_machine():
         # run imu for gyro heading
         angle_z = imu_thingy_for_stuff()
 
-        if state == -2:  # defense mode
-            pass
-            # """
-            # Defense: sit between ball and our goal, switch to 1 when ball found
-            # """
-            # IR_sensor_read()
-            # process_frame(["ball", "hat"])
-            # if found_ball:
-            #     state = 1
-            # else:
-            #     # slowly rotate back toward our own goal (opposite of GOAL_HEADING)
-            #     defend_heading = GOAL_HEADING + 180
-            #     heading_error = (defend_heading - angle_z + 180) % 360 - 180 # wrap to -180..180
-            #     if abs(heading_error) > 10:
-            #         send_command(0, 0, 60 if heading_error > 0 else -60) # check rotation sign
-            #     else:
-            #         send_command(0, 0, 0)
-            #     drive_update()
-            #     print(f"defending, heading err {heading_error:.1f}")
+        if state == -2:  # defense mode where the hell da ball
+            """
+            Defense: face the goal we score on (within 90 deg of GOAL_HEADING),
+            back up toward our own end until the goal posts look close together,
+            then wait. switch to 1 when ball found
+            """
+            IR_sensor_read()
+            process_frame(["ball", "goal"])
+            # how far off we are from GOAL_HEADING, wrapped to -180..180
+            heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
+
+            if found_ball:
+                print("defense: found ball")
+                state = 1
+            elif abs(heading_error) > DEFENSE_HEADING_TOL:
+                # facing the wrong way, rotate toward GOAL_HEADING before backing up
+                print(f"defense: wrong way, heading err {heading_error:.1f}, rotating")
+                send_command(0, 0, 90 if heading_error > 0 else -90) # check rotation sign for direction
+                drive_update()
+            elif found_green_goal and found_purple_goal:
+                goal_px = abs(green_x - purple_x) # gets smaller the further we are from the goal
+                print(f"defense: goal px sep {goal_px:.0f} (target {DEFENSE_GOAL_PX}), heading err {heading_error:.1f}")
+                if goal_px > DEFENSE_GOAL_PX:
+                    # still too close to their goal, keep backing up
+                    send_command(150, 180, 0) # 180 = straight back, check angle
+                else:
+                    # at our end of the field, stop and wait for the ball
+                    print("defense: in position")
+                    send_command(0, 0, 0)
+                drive_update()
+            else:
+                # facing roughly right but cant see both posts, rotate toward GOAL_HEADING to find them
+                print(f"defense: goals not both seen, heading err {heading_error:.1f}")
+                send_command(0, 0, 60 if heading_error > 0 else -60) # check rotation sign
+                drive_update()
         elif state == -1:  # init
             print(state)
             process_frame(["goal"])
