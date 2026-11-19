@@ -35,15 +35,9 @@ run ir all times to check if we gonna crash
 
 to test:
 orange
-purple
-green
-pixel minimum size for goals sepearation from one side of the field to other
-motor speed for backup
 find goal init state
-imu working and if 90 degree good enough 
+imu 90 degree good enough for goal check
 speed for ball chasing
-rotation speed
-IR working, driving away right, 0.25 sec long enough to get off wall
 defense mode
 do we need state 0 of back up to find ball, defense state does that.
 scoring state logic
@@ -69,8 +63,8 @@ import random
 
 
 fl_sensor = 23 # front left GPIO pin
-bl_sensor = 27 # back left GPIO pin
-fr_sensor = 17 # front right GPIO pin
+fr_sensor = 27 # back left GPIO pin
+bl_sensor = 17 # front right GPIO pin
 br_sensor = 22 # Back right GPIO pin
 goal_switch = 5 # high = purple left, low = green left
 hat_switch = 6 # high = yellow hat low = orange hat
@@ -110,7 +104,7 @@ purple_y = 0
 min_ball_area = 1250
 min_hat_area = 400
 min_goal_area = 50 # test if this works goals would be pretty small far away
-DEFENSE_GOAL_PX = 40 # CALIBRATE: goal post x separation (px) when we are back at our end of the field
+DEFENSE_GOAL_PX = 220 # CALIBRATE: goal post x separation (px) when we are back at our end of the field
 DEFENSE_HEADING_TOL = 90 # must be within this many degrees of GOAL_HEADING to back up
 
 # ---- debug display ----
@@ -147,8 +141,8 @@ upper_orange = np.array([15, 255, 230])
 # upper_purple = np.array([280, 60, 75])
 lower_green = np.array([47, 76, 140])
 upper_green = np.array([58, 153, 255])
-lower_purple = np.array([130, 127, 102])
-upper_purple = np.array([140, 153, 192])
+lower_purple = np.array([110, 140, 100])
+upper_purple = np.array([185, 180, 200])
 # need to add code for finding these and test if the range is good.
 
 
@@ -206,10 +200,10 @@ def IR_sensor_read(): # need to get working actually
         bl_val = 1 - GPIO.input(bl_sensor)
         br_val = 1 - GPIO.input(br_sensor)
 
-        print(f"fl: {fl_val}, fr: {fr_val}, bl: {bl_val}, br: {br_val}")
+        #print(f"fl: {fl_val}, fr: {fr_val}, bl: {bl_val}, br: {br_val}")
 
         if (fl_val or fr_val or bl_val or br_val):
-            speed = 120
+            speed = -100
             rotation = 0
             if(fl_val):
                 angle = -135
@@ -219,10 +213,11 @@ def IR_sensor_read(): # need to get working actually
                 angle = -45
             elif(br_val):
                 angle = 45
+            
 
             # write drive away command
-            command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
-            ser.write(command.encode())
+            #command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
+            #ser.write(command.encode())
             # wait 1/4 sec
             time.sleep(0.25) # check if this is long enough
             # stop it 
@@ -401,7 +396,7 @@ def state_machine():
     global state, GOAL_HEADING
 
     # pick spin direction once so it doesnt flip every frame
-    spin_dir = random.choice([-75, 75]) # random left or right direction might still be too fast
+    spin_dir = random.choice([-90, 90]) # random left or right direction might still be too fast
     print(f"spin dir is {spin_dir}")
 
     while not shutting_down:
@@ -451,9 +446,12 @@ def state_machine():
                 drive_update()
         elif state == -1:  # init
             #print(f"the state is {state}")
+            IR_sensor_read()
             process_frame(["goal"])
             if found_green_goal and found_purple_goal:
                 print("found both goals")
+                goal_px = abs(green_x - purple_x) # gets smaller the further we are from the goal
+                print(f"defense: goal px sep {goal_px:.0f} (target {DEFENSE_GOAL_PX})")
             
                 if GOAL_STATE: # purple left goal
                     if green_x - purple_x > 0: # green is further right on camera than purple
@@ -463,11 +461,11 @@ def state_machine():
                         send_command(0,0,0)
                         ser.write("<STOP>".encode())
                         print("Going to state 0")
-                        #state = 0
+                        state = 0
                     else: # need to turn around we see the wrong goal
                         send_command(0,0,spin_dir)
                         drive_update()
-                        #turn around faster
+                        #turn around faster maybe
                 else: # green left goal
                     if purple_x - green_x > 0:
                         heading = imu_thingy_for_stuff() # save the heading 
@@ -475,7 +473,7 @@ def state_machine():
                         GOAL_HEADING = heading
                         send_command(0,0,0)
                         ser.write("<STOP>".encode())
-                        #state = 0
+                        state = 0
                     else: 
                         send_command(0,0,spin_dir)
                         # troubleshoot try to drive fwd
@@ -484,10 +482,10 @@ def state_machine():
             else:
                 # didnt find goals keep spinning
                 print("no goals, spinning")
-                tilt_cam(135)
-                time.sleep(1)
-                tilt_cam(90)
-                time.sleep(1)
+                #tilt_cam(135)
+                #time.sleep(1)
+                #tilt_cam(90)
+                #time.sleep(1)
                 send_command(0, 0, spin_dir)
                 drive_update()
         elif state == 0:
@@ -557,9 +555,9 @@ def state_machine():
                     angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
                 else:
                     angle = 0 # if we're within 2 ft of the ball, it pretty much takes up the FOV, so set the angle to 0 and CHANGE STATE TO FIND THE GOAL with cam
-                speed = 255
-                # send_command(speed, angle, rotation)
-                # drive_update()
+                speed = 120
+                send_command(speed, angle, rotation)
+                drive_update()
                 # print(f"dist {predicted_distance:.2f}ft  angle {angle:.1f}  cmd {next_command}")
                 # if predicted_distance <= 2.1: # close enough, line up the kick
                 #     send_command(0, 0, 0)
@@ -643,7 +641,7 @@ def state_machine():
 
 def send_command(speed, angle, rotation):
     global next_command
-    next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
+    next_command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
 
 
 
@@ -665,7 +663,7 @@ def imu_thingy_for_stuff():
     # Read sensor values
     _, _, gyro_z = mpu.gyro
     gyro_z = np.degrees(gyro_z)
-    if abs(gyro_z) < 0.5:
+    if abs(gyro_z) < 2:
         gyro_z = 0
     t_now = time.time()
     delta_t = t_now - prev_time
