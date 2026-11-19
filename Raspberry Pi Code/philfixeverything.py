@@ -20,14 +20,34 @@ the time wasted trying to reorient is wasted if the ball bounces off the wall an
 TODO
 add comments NC
 actually add scheduler (maybe not and just limit speed for motor)
-define states beyond pseudo code
 get purple and green thresh going (test in class)
 distance estimate based on pixel distance of the goal posts (add in state)
 
-work through method of how to tell robot what goal we want to score into (purple left or green left) switch
+do we want to remove state 0 of find ball because defense should be what we do anyway? 
+
+
 states fully defined for testing (make testing easy with locked in state and somefeedback on if it is working)
 run ir all times to check if we gonna crash
-plan how we do IR I think if we see, run away from sensor that tripped for a quarter second then back out to previous state
+
+to test:
+orange
+purple
+green
+pixel minimum size for goals sepearation from one side of the field to other
+motor speed for backup
+find goal init state
+imu working and if 90 degree good enough 
+speed for ball chasing
+rotation speed
+IR working, driving away right, 0.25 sec long enough to get off wall
+defense mode
+do we need state 0 of back up to find ball, defense state does that.
+scoring state logic
+
+
+
+
+
 
 """
 
@@ -88,6 +108,11 @@ min_hat_area = 400
 min_goal_area = 50 # test if this works goals would be pretty small far away
 DEFENSE_GOAL_PX = 40 # CALIBRATE: goal post x separation (px) when we are back at our end of the field
 DEFENSE_HEADING_TOL = 90 # must be within this many degrees of GOAL_HEADING to back up
+
+# ---- debug display ----
+# set False for competition (imshow slows the loop and needs a monitor/VNC/ssh -X)
+DEBUG_VIEW = True
+SHOW_MASKS = True # also show the black/white threshold masks for each color (great for tuning HSV)
 
 
 heading = 0
@@ -224,8 +249,6 @@ def IR_sensor_read(): # need to get working actually
             # stop it 
             ser.write("<STOP>".encode())
 
-        
-
 #================== SERVO =======================================
 def init_servos():
     """
@@ -278,19 +301,23 @@ def process_frame(targets):
     frame = picam.capture_array()
     framesmall = cv2.resize(frame, (320, 240))
     frameHSV = cv2.cvtColor(framesmall, cv2.COLOR_BGR2HSV)
-    #print("is u there looking frame")
-    cv2.imshow("frame", frame)
-    #print("why no show")
-    # cases for ball, hat and goal using minenclosing circle to get centerpoints
+    
+    # debug copy to draw on. drawn on the small frame so the x/y coords match what the states use
+    # XRGB8888 gives 4 channels, drop the 4th so drawing colors work normally
+    debug = framesmall[:, :, :3].copy() if DEBUG_VIEW else None
+    masks = {} # name -> threshold mask, shown if SHOW_MASKS
+
     # call with predefine array of strings ["ball", "hat"]
     # case check for ball 
     if "ball" in targets: 
         mask1 = cv2.inRange(frameHSV, low_lower_red, low_upper_red)
         mask2 = cv2.inRange(frameHSV, up_lower_red, up_upper_red)
         frameThreshRed = mask1 + mask2
+        masks["red (ball)"] = frameThreshRed
         contoursRed, hierarchy = cv2.findContours(frameThreshRed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contoursRed:
             ball = max(contoursRed, key=cv2.contourArea) # only look at biggest contour
+            draw_blob(debug, ball, "ball", min_ball_area, (0, 0, 255))
             if cv2.contourArea(ball) > min_ball_area: # above minimum size
                 ((ball_x, ball_y), ball_r) = cv2.minEnclosingCircle(ball) # get coords
                 found_ball = True
@@ -301,18 +328,22 @@ def process_frame(targets):
         if HAT_STATE:
             # yellow hat on enemy
             frameThreshYellow = cv2.inRange(frameHSV, lower_yellow, upper_yellow)
+            masks["yellow (hat)"] = frameThreshYellow
             contoursYellow, hierarchy = cv2.findContours(frameThreshYellow, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if contoursYellow:
                 hat = max(contoursYellow, key=cv2.contourArea) #only biggest cluster found
+                draw_blob(debug, hat, "hat", min_hat_area, (0, 255, 255))
                 if cv2.contourArea(hat) > min_hat_area:
                     ((hat_x, hat_y), hat_r) = cv2.minEnclosingCircle(hat)
                     found_hat = True
         else:
             # orange hat on enemy
             frameThreshOrange = cv2.inRange(frameHSV, lower_orange, upper_orange)
+            masks["orange (hat)"] = frameThreshOrange
             contoursOrange, hierarchy = cv2.findContours(frameThreshOrange, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if contoursOrange:           
+            if contoursOrange:
                 hat = max(contoursOrange, key=cv2.contourArea) #only biggest cluster found
+                draw_blob(debug, hat, "hat", min_hat_area, (0, 140, 255))
                 if cv2.contourArea(hat) > min_hat_area:
                     ((hat_x, hat_y), hat_r) = cv2.minEnclosingCircle(hat)
                     found_hat = True
@@ -320,28 +351,66 @@ def process_frame(targets):
     #case for goal blocks looking for both always and just output location
     if "goal" in targets:
         frameThreshGreen = cv2.inRange(frameHSV, lower_green, upper_green)
-        frameThreshPurple = cv2.inRange(frameHSV, lower_purple, upper_purple)      
+        frameThreshPurple = cv2.inRange(frameHSV, lower_purple, upper_purple)
+        masks["green (goal)"] = frameThreshGreen
+        masks["purple (goal)"] = frameThreshPurple
         contoursGreen, hierarchy = cv2.findContours(frameThreshGreen, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contoursPurple, hierarchy = cv2.findContours(frameThreshPurple, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contoursGreen:
-            green = max(contoursGreen, key=cv2.contourArea) 
+            green = max(contoursGreen, key=cv2.contourArea)
+            draw_blob(debug, green, "green", min_goal_area, (0, 255, 0))
             if cv2.contourArea(green) > min_goal_area:
                 ((green_x, green_y),green_r) = cv2.minEnclosingCircle(green)
                 found_green_goal = True
         if contoursPurple:
-            purple = max(contoursPurple, key=cv2.contourArea)    
+            purple = max(contoursPurple, key=cv2.contourArea)
+            draw_blob(debug, purple, "purple", min_goal_area, (255, 0, 200))
             if cv2.contourArea(purple) > min_goal_area:
                 ((purple_x, purple_y),purple_r) = cv2.minEnclosingCircle(purple)
                 found_purple_goal = True
-                
-        
-    """ for troubleshooting 
-    frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-    frame = cv2.putText(frame, f"Ball dist: {predicted_distance}ft", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-    frame = cv2.putText(frame, f"Ball Size: {r_max}", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-    frame = cv2.putText(frame, f"Ball dist: Not Detected", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-    frame = cv2.putText(frame, f"Ball Size: Not Detected", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+    show_debug(debug, masks)
+
+def draw_blob(img, contour, name, min_area, color):
     """
+    draw the biggest blob of a color on the debug image.
+    solid circle + label = big enough to count as found
+    thin outline + "too small" = color matched but under the min area (lower min area or widen HSV)
+    """
+    if img is None:
+        return
+    area = cv2.contourArea(contour)
+    (x, y), r = cv2.minEnclosingCircle(contour)
+    x, y, r = int(x), int(y), int(r)
+    if area > min_area:
+        cv2.drawContours(img, [contour], -1, color, 1)
+        cv2.circle(img, (x, y), r, color, 2)
+        cv2.circle(img, (x, y), 2, color, -1) # center dot
+        cv2.putText(img, f"{name} x{x} a{area:.0f}", (x - r, max(y - r - 4, 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+    else:
+        cv2.drawContours(img, [contour], -1, color, 1)
+        cv2.putText(img, f"{name} too small a{area:.0f}<{min_area}", (x, max(y - 4, 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+
+def show_debug(img, masks):
+    """
+    show the debug window. cv2.imshow does NOTHING on screen until cv2.waitKey runs,
+    that is why the old imshow never showed up
+    """
+    if img is None:
+        return
+    # state + found flags across the top
+    cv2.putText(img, f"state {state}  hdg {angle_z:.0f}", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+    flags = f"B:{int(found_ball)} H:{int(found_hat)} G:{int(found_green_goal)} P:{int(found_purple_goal)}"
+    cv2.putText(img, flags, (5, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+    cv2.line(img, (160, 0), (160, 240), (255, 255, 255), 1) # center line for lining up
+    cv2.imshow("robot view", cv2.resize(img, (640, 480))) # blow up so it is easier to see
+    if SHOW_MASKS:
+        for name, m in masks.items():
+            cv2.imshow(f"mask {name}", m)
+    cv2.waitKey(1) # REQUIRED for the windows to actually draw
+
                     
 def state_machine():
     # Distances:
@@ -353,7 +422,7 @@ def state_machine():
     global state, GOAL_HEADING
 
     # pick spin direction once so it doesnt flip every frame
-    spin_dir = random.choice([-75, 75]) # random left or right direction
+    spin_dir = random.choice([-75, 75]) # random left or right direction might still be too fast
     print(f"spin dir is {spin_dir}")
 
     while not shutting_down:
@@ -404,7 +473,6 @@ def state_machine():
         elif state == -1:  # init
             #print(f"the state is {state}")
             process_frame(["goal"])
-            cv2.imshow("frame asshole",frame)
             if found_green_goal and found_purple_goal:
                 print("found both goals")
             
@@ -434,8 +502,6 @@ def state_machine():
                         # troubleshoot try to drive fwd
                         # send command(100,0,0) it did not drive right
                         drive_update()
-
-
             else:
                 # didnt find goals keep spinning
                 print("no goals, spinning")
@@ -452,9 +518,19 @@ def state_machine():
             if ball too damn close, state 2
             """
             IR_sensor_read()
-            process_frame(["ball"])
+            process_frame(["ball", "goal"])
             if found_ball:
                 state = 1
+            # backup and cam scan
+            send_command(-100, 0, 0)
+            drive_update()
+            cam_sweep(0,45,135)
+
+            #if found_green_goal and found_purple_goal:
+
+
+
+
             # if backed up:
             #     state = -2
             # add look with servo
@@ -512,13 +588,7 @@ def state_machine():
                 drive_update()
                 print("lost ball")
                 state = 0 # go back to find the ball now that we lost it
-                """ for troubleshooting 
-                frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                frame = cv2.putText(frame, f"Ball dist: {predicted_distance}ft", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                frame = cv2.putText(frame, f"Ball Size: {r_max}", (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                frame = cv2.putText(frame, f"Ball dist: Not Detected", (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                frame = cv2.putText(frame, f"Ball Size: Not Detected", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                """
+
     
         elif state ==2:
             """
