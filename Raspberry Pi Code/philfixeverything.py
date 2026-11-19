@@ -35,18 +35,11 @@ run ir all times to check if we gonna crash
 
 to test:
 orange
-find goal init state
 imu 90 degree good enough for goal check
 speed for ball chasing
 defense mode
 do we need state 0 of back up to find ball, defense state does that.
 scoring state logic
-
-
-
-
-
-
 """
 
 import threading
@@ -216,8 +209,8 @@ def IR_sensor_read(): # need to get working actually
             
 
             # write drive away command
-            #command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
-            #ser.write(command.encode())
+            command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
+            ser.write(command.encode())
             # wait 1/4 sec
             time.sleep(0.25) # check if this is long enough
             # stop it 
