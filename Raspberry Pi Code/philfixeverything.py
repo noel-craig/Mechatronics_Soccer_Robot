@@ -3,6 +3,10 @@ Tema Brute force mechatronics robot code that will win because we want it to
 
 The computer vision is through opencv and detecting color ranges
 
+to start you need to get into the vitrual environment
+
+source .venv/bin/activate
+
 The state machine states are outline as:
 # States:
 # -2: Defense mode. switch to 1 when we find the ball
@@ -147,31 +151,6 @@ lower_purple = np.array([130, 127, 102])
 upper_purple = np.array([140, 153, 192])
 # need to add code for finding these and test if the range is good.
 
-# orange data points
-# [30.3 95.9 85.1]
-# [18.8 99.4 69.4]
-# [32.2 98.7 88.2]
-# [21.8 99.4 69.4]
-# [21.1 97.8 70.6]
-# [21.2 99.4 64.7]
-# [20.8 97 64.3]
-# [19.9 100 66.3]
-
-#Green data points
-# [100, 55.2, 78.8]
-# [112.7, 54.7, 58.8]
-# [111.1, 52.6, 60.4]
-# [97.2, 33.6, 92.2]
-# [96.1, 36.4, 94.9]
-
-# Purp data points
-# [275.1, 53.1, 69.4]
-# [276.8, 55.8, 71]
-# [278.5, 52.9, 68.2]
-# [264.8 , 55.3, 44.7]
-# [269, 52.1, 46.7]
-# [271.8, 56.4, 45.9]
-# [278.7, 58.1, 53.3] 
 
 def initialize():
     global ser, picam, GOAL_STATE, HAT_STATE
@@ -505,6 +484,10 @@ def state_machine():
             else:
                 # didnt find goals keep spinning
                 print("no goals, spinning")
+                tilt_cam(135)
+                time.sleep(1)
+                tilt_cam(90)
+                time.sleep(1)
                 send_command(0, 0, spin_dir)
                 drive_update()
         elif state == 0:
@@ -695,6 +678,7 @@ def imu_thingy_for_stuff():
 def main():
     global shutting_down, state
     initialize()
+    
     # TODO start the threads
     # TODo: prioritize and shit
     # hard code state for testing 
