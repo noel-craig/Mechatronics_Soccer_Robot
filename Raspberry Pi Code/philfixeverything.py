@@ -50,6 +50,7 @@ fr_sensor = 17 # front right GPIO pin
 br_sensor = 22 # Back right GPIO pin
 goal_switch = 5 # high = purple left, low = green left
 hat_switch = 6 # high = yellow hat low = orange hat
+switch_high = 10
 hor_servo = AngularServo(12, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # horizonal rotation servo
 vert_servo = AngularServo(13, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # vertical servo
 SERVO_SLEEP = 0.01 # time between angles for servos
@@ -68,6 +69,7 @@ should_kick = False
 last_motor_cmd_time = time.time_ns()
 
 # openCV global variables
+frame = 0
 found_ball = False
 ball_x = 0
 ball_y = 0
@@ -83,7 +85,7 @@ purple_x = 0
 purple_y = 0
 min_ball_area = 1250
 min_hat_area = 400
-min_goal_area = 200 # test if this works goals would be pretty small far away
+min_goal_area = 50 # test if this works goals would be pretty small far away
 DEFENSE_GOAL_PX = 40 # CALIBRATE: goal post x separation (px) when we are back at our end of the field
 DEFENSE_HEADING_TOL = 90 # must be within this many degrees of GOAL_HEADING to back up
 
@@ -150,13 +152,15 @@ def initialize():
     global ser, picam, GOAL_STATE, HAT_STATE
     ser = serial.Serial('/dev/ttyACM0', 115200)
     GPIO.setmode(GPIO.BCM)
+    GPIO.setup(10, GPIO.OUT)
+    GPIO.output(10, GPIO.HIGH)
     picam = Picamera2()
     picam.configure(picam.create_video_configuration(main={"format": 'XRGB8888', "size": (640, 480)})) # 640x480 picam 
     # init all IR sensors
     GPIO.setup(fl_sensor, GPIO.IN); GPIO.setup(bl_sensor, GPIO.IN); GPIO.setup(fr_sensor, GPIO.IN); GPIO.setup(br_sensor, GPIO.IN)
     # init goal switch and hat switch
-    GPIO.setup(goal_switch, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
-    GPIO.setup(hat_switch, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
+    GPIO.setup(goal_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
+    GPIO.setup(hat_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
     init_servos() # initialize camera servos
     GOAL_STATE = update_goal_state()
     HAT_STATE = update_hat_state()
@@ -272,9 +276,11 @@ def process_frame(targets):
     found_ball = found_hat = found_green_goal = found_purple_goal = False
     
     frame = picam.capture_array()
-    frame = cv2.resize(frame, (320, 240))
-    frameHSV = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    
+    framesmall = cv2.resize(frame, (320, 240))
+    frameHSV = cv2.cvtColor(framesmall, cv2.COLOR_BGR2HSV)
+    #print("is u there looking frame")
+    cv2.imshow("frame", frame)
+    #print("why no show")
     # cases for ball, hat and goal using minenclosing circle to get centerpoints
     # call with predefine array of strings ["ball", "hat"]
     # case check for ball 
@@ -327,6 +333,7 @@ def process_frame(targets):
             if cv2.contourArea(purple) > min_goal_area:
                 ((purple_x, purple_y),purple_r) = cv2.minEnclosingCircle(purple)
                 found_purple_goal = True
+                
         
     """ for troubleshooting 
     frame = cv2.putText(frame, f"Hor error: {hor_error} cmd speed {speed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
@@ -346,7 +353,7 @@ def state_machine():
     global state, GOAL_HEADING
 
     # pick spin direction once so it doesnt flip every frame
-    spin_dir = random.choice([-90, 90]) # random left or right direction
+    spin_dir = random.choice([-75, 75]) # random left or right direction
     print(f"spin dir is {spin_dir}")
 
     while not shutting_down:
@@ -397,6 +404,7 @@ def state_machine():
         elif state == -1:  # init
             #print(f"the state is {state}")
             process_frame(["goal"])
+            cv2.imshow("frame asshole",frame)
             if found_green_goal and found_purple_goal:
                 print("found both goals")
             
@@ -407,6 +415,7 @@ def state_machine():
                         GOAL_HEADING = heading
                         send_command(0,0,0)
                         ser.write("<STOP>".encode())
+                        print("Going to state 0")
                         #state = 0
                     else: # need to turn around we see the wrong goal
                         send_command(0,0,spin_dir)
@@ -422,12 +431,14 @@ def state_machine():
                         #state = 0
                     else: 
                         send_command(0,0,spin_dir)
+                        # troubleshoot try to drive fwd
+                        # send command(100,0,0) it did not drive right
                         drive_update()
 
 
             else:
                 # didnt find goals keep spinning
-                #print("no goals, spinning")
+                print("no goals, spinning")
                 send_command(0, 0, spin_dir)
                 drive_update()
         elif state == 0:
