@@ -56,8 +56,8 @@ void setup() {
   chassis.stop();
     pinMode(switch1, OUTPUT);
     pinMode(switch2, OUTPUT);
-    digitalWrite(switch1, HIGH);
-    digitalWrite(switch2, HIGH);
+    analogWrite(switch1, 168);
+    analogWrite(switch2, 168);
 }
 
 const size_t buffLen = 6;     // length of the expected message chunks (number of characters between two commas) (16-bit int has 5 digits + sign)

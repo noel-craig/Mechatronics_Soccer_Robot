@@ -52,37 +52,40 @@ void Chassis::rotate(int speed) {
     back_left.reverse(speed);
 }
 
-void Chassis::rotateAbout(int speed, int wheel){
+void Chassis::rotateAbout(int speed, int wheel) {
     // 1  FR
     if (wheel == 0){
         front_left.setSpeed(speed);
         front_right.setSpeed(0);
-        back_left.setSpeed(-speed):
-        back_right.setSpeed(speed):        
-    }s
+        back_left.setSpeed(-speed);
+        back_right.setSpeed(speed);      
+    }
     // 2 FL
     else if (wheel == 1){
         front_left.setSpeed(0);
         front_right.setSpeed(-speed);
-        back_left.setSpeed(-speed):
-        back_right.setSpeed(speed):
+        back_left.setSpeed(-speed);
+        back_right.setSpeed(speed);
     }
     // 3 RR
     else if (wheel == 2){
         front_left.setSpeed(speed);
         front_right.setSpeed(-speed);
-        back_left.setSpeed(-speed):
-        back_right.setSpeed(0):
+        back_left.setSpeed(-speed);
+        back_right.setSpeed(0);
     }
     // 4 RL
     else if (wheel == 3){
         front_left.setSpeed(speed);
         front_right.setSpeed(-speed);
-        back_left.setSpeed(0):
-        back_right.setSpeed(-speed):
+        back_left.setSpeed(0);
+        back_right.setSpeed(-speed);
     } 
     else{
-        return -1;
+        front_left.setSpeed(0);
+        front_right.setSpeed(0);
+        back_left.setSpeed(0);
+        back_right.setSpeed(0); 
     }
 
 }

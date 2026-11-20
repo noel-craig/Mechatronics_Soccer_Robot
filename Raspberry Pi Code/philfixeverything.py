@@ -192,6 +192,7 @@ def imu_gyro_read():
     # set up i2c connection
     # what addr to call to get gyro heading
     # return heading
+    pass
 
 #================== SERVO =======================================
 def init_servos():
@@ -406,6 +407,7 @@ def camera_sensors_update(ball, hat, goals): # add arg for ball, hat, goals
         
         # care about if we 
         if GOAL_STATE == 1:
+            pass
             
 
 def state_machine():
@@ -456,7 +458,7 @@ def state_machine():
         process_frame(["ball"])
         if found_ball:
             state = 1
-            break
+            # break DON'T NEED BREAK HERE, IT WILL BE PUSHED TO STATE 1
         # if backed up:
         #     state = -2
         # add look with servo
@@ -517,17 +519,17 @@ def drive_update():
         # passed between current and the last motor write 
 
 def imu_thingy_for_stuff():
-    global angle_z
+    global angle_z # we're only reading yaw of the IMU.  In our IMU orientation it's the z axis
     prev_time = time.time()
     while not shutting_down:
         # Read sensor values
         _, _, gyro_z = mpu.gyro
-        if abs(acc_y) < 0.2:
+        if abs(acc_y) < 0.2: # if the absolute value of the y acceleration is <0.2, then don't add it to change in angle. NOISE.
             acc_y = 0
         t_now = time.time()
         delta_t = t_now - prev_time
         prev_time = t_now
-        angle_z += gyro_z * delta_t
+        angle_z += gyro_z * delta_t # THIS IS OUR ORIENTATION.
         time.sleep(1 / IMU_FREQ)
 
 
@@ -539,7 +541,7 @@ def main():
     # TODo: prioritize and shit
     try:
         while True:
-            time.sleep(0.5)
+            time.sleep(0.5) 
     except KeyboardInterrupt:
         shutting_down = True
         ser.write("<STOP>".encode())
