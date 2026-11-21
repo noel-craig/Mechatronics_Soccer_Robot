@@ -1,4 +1,7 @@
-from philfixeverything import *
+import random
+import board
+import adafruit_mpu6050
+from gpiozero import AngularServo
 
 # GLOBALS READ-ONLY
 

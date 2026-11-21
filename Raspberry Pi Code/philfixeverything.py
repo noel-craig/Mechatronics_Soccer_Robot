@@ -53,6 +53,7 @@ import RPi.GPIO as GPIO
 import serial
 from gpiozero import AngularServo # used for Servo commands
 import random
+import sys
 from states import State_Machine
 from config import *
 
@@ -110,7 +111,7 @@ SHOW_MASKS = True # also show the black/white threshold masks for each color (gr
 
 heading = 0
 GOAL_HEADING = 90 # set to due east so goal away from mountains. idk we can change 
-state = State_Machine()
+state = State_Machine(sys.modules[__name__]) # pass this module in so states.py can use its globals/functions
 prev_time = time.time()
 
 # constants for colors
@@ -153,7 +154,7 @@ def initialize():
     GPIO.setup(fl_sensor, GPIO.IN); GPIO.setup(bl_sensor, GPIO.IN); GPIO.setup(fr_sensor, GPIO.IN); GPIO.setup(br_sensor, GPIO.IN)
     # init goal switch and hat switch
     GPIO.setup(goal_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
-    GPIO.setup(hat_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
+    GPIO.setup(pk_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
     init_servos() # initialize camera servos
     GOAL_STATE = update_goal_state()
     PK_STATE = update_PK_state()
@@ -466,6 +467,7 @@ def state_machine():
         #     # if not found_ball: (ball may be hidden under camera when tilted up)
         #     #     tilt_cam(90)
         #     #     state = 0
+            pass
         else:
             state.init()
         # state 4 uses new noel code
