@@ -55,7 +55,9 @@ from gpiozero import AngularServo # used for Servo commands
 import random
 import sys
 from states import State_Machine
-from config import *
+from config import * # hardware: pins, servos, imu
+from calibration import * # tuning numbers from calibration.json
+from robot_state import rs # shared live state (found_ball, ball_x, angle_z, ...)
 
 
 # fl_sensor = 23 # front left GPIO pin
@@ -76,32 +78,12 @@ from config import *
 # SENSOR_FREQ = 30  # hz
 # MOTOR_FREQ = 10  # hz
 # IMU_FREQ = 60  # hz
-angle_z = 0
+# vision results, heading and switch states live in robot_state.py (rs.found_ball, rs.angle_z, ...)
+# tuning numbers (HSV ranges, min areas, defense values) live in calibration.json
 shutting_down = False
 next_command = "<STOP>"
 should_kick = False
 last_motor_cmd_time = time.time_ns()
-
-# openCV global variables
-frame = 0
-found_ball = False
-ball_x = 0
-ball_y = 0
-ball_r = 0
-found_hat = False
-hat_x = 0
-hat_y = 0
-found_green_goal = False
-green_x = 0
-green_y = 0
-found_purple_goal = False
-purple_x = 0
-purple_y = 0
-min_ball_area = 1250
-min_hat_area = 400
-min_goal_area = 50 # test if this works goals would be pretty small far away
-DEFENSE_GOAL_PX = 220 # CALIBRATE: goal post x separation (px) when we are back at our end of the field
-DEFENSE_HEADING_TOL = 90 # must be within this many degrees of GOAL_HEADING to back up
 
 # ---- debug display ----
 # set False for competition (imshow slows the loop and needs a monitor/VNC/ssh -X)
@@ -109,41 +91,12 @@ DEBUG_VIEW = True
 SHOW_MASKS = True # also show the black/white threshold masks for each color (great for tuning HSV)
 
 
-heading = 0
-GOAL_HEADING = 90 # set to due east so goal away from mountains. idk we can change 
-state = State_Machine(sys.modules[__name__]) # pass this module in so states.py can use its globals/functions
+state = State_Machine(sys.modules[__name__]) # pass this module in so states.py can call its functions (process_frame, send_command, ...)
 prev_time = time.time()
-
-# constants for colors
-# stupid wrap around need 0-5 and 170 -180 ball
-low_lower_red = np.array([0, 150, 100])
-low_upper_red = np.array([5, 255, 255])
-up_lower_red = np.array([170, 150, 100])
-up_upper_red = np.array([180, 255, 255])
-# hat
-lower_yellow = np.array([25, 150, 100])
-upper_yellow = np.array([40, 255, 255])
-# old values were color picker scale (H 0-360, S 0-100, V 0-100)
-# converted to opencv scale (H 0-179, S 0-255, V 0-255): H/2, S*2.55, V*2.55
-# lower rounded down, upper rounded up
-# lower_orange = np.array([18, 90, 63])
-# upper_orange = np.array([30, 100, 90])
-lower_orange = np.array([9, 229, 160])
-upper_orange = np.array([15, 255, 230])
-# goal corners
-# lower_green = np.array([95, 30, 55])
-# upper_green = np.array([115, 60, 100])
-# lower_purple = np.array([260, 50, 40])
-# upper_purple = np.array([280, 60, 75])
-lower_green = np.array([47, 76, 140])
-upper_green = np.array([58, 153, 255])
-lower_purple = np.array([110, 140, 100])
-upper_purple = np.array([185, 180, 200])
-# need to add code for finding these and test if the range is good.
 
 
 def initialize():
-    global ser, picam, GOAL_STATE, PK_STATE
+    global ser, picam
     ser = serial.Serial('/dev/ttyACM0', 115200)
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(10, GPIO.OUT)
@@ -156,8 +109,8 @@ def initialize():
     GPIO.setup(goal_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
     GPIO.setup(pk_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
     init_servos() # initialize camera servos
-    GOAL_STATE = update_goal_state()
-    PK_STATE = update_PK_state()
+    rs.goal_state = update_goal_state()
+    rs.pk_state = update_PK_state()
     picam.start()
     time.sleep(2)
     print("init complete")
@@ -167,8 +120,8 @@ def update_goal_state():
     update status of goal switch
     returns status of high = purple left, low = green left
     """
-    GOAL_STATE = GPIO.input(goal_switch)
-    if GOAL_STATE:
+    goal_state = GPIO.input(goal_switch)
+    if goal_state:
         print("goal Switch is high this way/purple left")
         return 1 # HIGH, PURPLE LEFT
     else:
@@ -180,8 +133,8 @@ def update_PK_state():
     update status of hat switch
     returns status of # high = yellow hat low = orange hat
     """
-    PK_STATE = GPIO.input(pk_switch)
-    if PK_STATE:
+    pk_state = GPIO.input(pk_switch)
+    if pk_state:
         print("PENALTY KICKK!!!!!")
         return 1
     else:
@@ -259,13 +212,10 @@ def cam_sweep(rotation, min_angle, max_angle):
 
 # just going to find things and leave computation to states
 def process_frame(targets):
-    global found_ball, ball_r, ball_x, ball_y
-    global found_hat, hat_x, hat_y
-    global found_green_goal, green_x, green_y
-    global found_purple_goal, purple_x, purple_y
+    # results go into rs (robot_state.py) so states.py sees them
     # reset if it saw something last loop
-    found_ball = found_hat = found_green_goal = found_purple_goal = False
-    
+    rs.reset_vision()
+
     frame = picam.capture_array()
     framesmall = cv2.resize(frame, (320, 240))
     frameHSV = cv2.cvtColor(framesmall, cv2.COLOR_BGR2HSV)
@@ -287,13 +237,13 @@ def process_frame(targets):
             ball = max(contoursRed, key=cv2.contourArea) # only look at biggest contour
             draw_blob(debug, ball, "ball", min_ball_area, (0, 0, 255))
             if cv2.contourArea(ball) > min_ball_area: # above minimum size
-                ((ball_x, ball_y), ball_r) = cv2.minEnclosingCircle(ball) # get coords
-                found_ball = True
+                ((rs.ball_x, rs.ball_y), rs.ball_r) = cv2.minEnclosingCircle(ball) # get coords
+                rs.found_ball = True
 
     
     # case check for hat high yellow low orange
     if "hat" in targets:
-        if HAT_STATE:
+        if rs.hat_state:
             # yellow hat on enemy
             frameThreshYellow = cv2.inRange(frameHSV, lower_yellow, upper_yellow)
             masks["yellow (hat)"] = frameThreshYellow
@@ -302,8 +252,8 @@ def process_frame(targets):
                 hat = max(contoursYellow, key=cv2.contourArea) #only biggest cluster found
                 draw_blob(debug, hat, "hat", min_hat_area, (0, 255, 255))
                 if cv2.contourArea(hat) > min_hat_area:
-                    ((hat_x, hat_y), hat_r) = cv2.minEnclosingCircle(hat)
-                    found_hat = True
+                    ((rs.hat_x, rs.hat_y), hat_r) = cv2.minEnclosingCircle(hat)
+                    rs.found_hat = True
         else:
             # orange hat on enemy
             frameThreshOrange = cv2.inRange(frameHSV, lower_orange, upper_orange)
@@ -313,8 +263,8 @@ def process_frame(targets):
                 hat = max(contoursOrange, key=cv2.contourArea) #only biggest cluster found
                 draw_blob(debug, hat, "hat", min_hat_area, (0, 140, 255))
                 if cv2.contourArea(hat) > min_hat_area:
-                    ((hat_x, hat_y), hat_r) = cv2.minEnclosingCircle(hat)
-                    found_hat = True
+                    ((rs.hat_x, rs.hat_y), hat_r) = cv2.minEnclosingCircle(hat)
+                    rs.found_hat = True
         
     #case for goal blocks looking for both always and just output location
     if "goal" in targets:
@@ -328,14 +278,14 @@ def process_frame(targets):
             green = max(contoursGreen, key=cv2.contourArea)
             draw_blob(debug, green, "green", min_goal_area, (0, 255, 0))
             if cv2.contourArea(green) > min_goal_area:
-                ((green_x, green_y),green_r) = cv2.minEnclosingCircle(green)
-                found_green_goal = True
+                ((rs.green_x, rs.green_y), green_r) = cv2.minEnclosingCircle(green)
+                rs.found_green_goal = True
         if contoursPurple:
             purple = max(contoursPurple, key=cv2.contourArea)
             draw_blob(debug, purple, "purple", min_goal_area, (255, 0, 200))
             if cv2.contourArea(purple) > min_goal_area:
-                ((purple_x, purple_y),purple_r) = cv2.minEnclosingCircle(purple)
-                found_purple_goal = True
+                ((rs.purple_x, rs.purple_y), purple_r) = cv2.minEnclosingCircle(purple)
+                rs.found_purple_goal = True
 
     show_debug(debug, masks)
 
@@ -369,8 +319,8 @@ def show_debug(img, masks):
     if img is None:
         return
     # state + found flags across the top
-    cv2.putText(img, f"state {state}  hdg {angle_z:.0f}", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-    flags = f"B:{int(found_ball)} H:{int(found_hat)} G:{int(found_green_goal)} P:{int(found_purple_goal)}"
+    cv2.putText(img, f"state {state.number}  hdg {rs.angle_z:.0f}", (5, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+    flags = f"B:{int(rs.found_ball)} H:{int(rs.found_hat)} G:{int(rs.found_green_goal)} P:{int(rs.found_purple_goal)}"
     cv2.putText(img, flags, (5, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
     cv2.line(img, (160, 0), (160, 240), (255, 255, 255), 1) # center line for lining up
     cv2.imshow("robot view", cv2.resize(img, (640, 480))) # blow up so it is easier to see
@@ -387,13 +337,12 @@ def state_machine():
     # 3ft ~ r = 62px
     # 3.5 ~ r = 56 px
     # 4ft ~ r = 47px
-    global GOAL_HEADING
     print(f"spin dir is {state.spin_dir}")
 
     while not shutting_down:
-        # run imu for gyro heading
-        state.angle_z = imu_thingy_for_stuff()
-        if PK_STATE:
+        # run imu for gyro heading (updates rs.angle_z)
+        imu_thingy_for_stuff()
+        if rs.pk_state:
             state.PK()
         elif state.number == -2:  # defense mode where the hell da ball
             state.defense()
@@ -404,70 +353,9 @@ def state_machine():
         elif state.number == 1:
             state.go_to_ball()
         elif state.number == 2:
-            """
-            Rotating for kick (center goal in frame with rotation then got to state 3)
-        
-            check ir
-            check camera for ball and goal pieces ()
-                if one goal piece check with gyro for direction of our desired goal
-            if found ball and both goal, drive to put goal intersection 
-          
-            """
-            IR_sensor_read()
-            process_frame(["ball","goal"])
-
-            # if not found_ball:
-            #     print("lost ball while lining up")
-            #     state = 0
-            # elif found_green_goal and found_purple_goal:
-            #     goal_center_x = (green_x + purple_x) / 2
-            #     goal_error = goal_center_x - ball_x  # want goal center lined up behind the ball
-            #     ball_error = ball_x - 160            # keep ball centered in frame
-            #     print(f"goal err {goal_error:.0f}  ball err {ball_error:.0f}")
-            #     if abs(goal_error) < 15 and abs(ball_error) < 20:
-            #         send_command(0, 0, 0)
-            #         drive_update()
-            #         state = 3
-            #     else:
-            #         # orbit the ball: strafe sideways while rotating to keep ball centered
-            #         strafe_angle = 90 if goal_error < 0 else -90   # check sign, negative angle = right
-            #         rotation = -0.5 * ball_error                   # check sign
-            #         send_command(120, strafe_angle, rotation)
-            #         drive_update()
-            # else:
-            #     # cant see both goal posts, use gyro to turn toward GOAL_HEADING
-            #     heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
-            #     print(f"no goal in view, heading err {heading_error:.1f}")
-            #     strafe_angle = 90 if heading_error > 0 else -90    # check sign
-            #     send_command(120, strafe_angle, -0.5 * (ball_x - 160))
-            #     drive_update()
-
+            state.state_2()
         elif state.number == 3:
-        #     """
-        #     Driving into goal (drive straight at goal, kick if enemy hat seen, then state 0)
-        #     """
-        #     IR_sensor_read()
-        #     tilt_cam(110) # look up at goal, check angle
-        #     process_frame(["ball", "goal", "hat"])
-        #     if found_green_goal and found_purple_goal:
-        #         goal_center_x = (green_x + purple_x) / 2
-        #         rotation = -0.5 * (goal_center_x - 160) # steer toward goal center, check sign
-        #         send_command(255, 0, rotation)
-        #     else:
-        #         # hold gyro heading
-        #         heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
-        #         send_command(255, 0, 2 * heading_error) # check sign
-        #     drive_update()
-        #     print(f"driving to goal cmd {next_command}  hat {found_hat}")
-        #     if found_hat:
-        #         print("enemy seen, kick")
-        #         # ser.write("<KICK>".encode()) # arduino does not have a KICK command yet
-        #         tilt_cam(90)
-        #         state = 0
-        #     # if not found_ball: (ball may be hidden under camera when tilted up)
-        #     #     tilt_cam(90)
-        #     #     state = 0
-            pass
+            state.state_3()
         else:
             state.init()
         # state 4 uses new noel code
@@ -493,7 +381,7 @@ def drive_update():
     # passed between current and the last motor write 
 
 def imu_thingy_for_stuff():
-    global angle_z, prev_time
+    global prev_time
     # Read sensor values
     _, _, gyro_z = mpu.gyro
     gyro_z = np.degrees(gyro_z)
@@ -502,8 +390,8 @@ def imu_thingy_for_stuff():
     t_now = time.time()
     delta_t = t_now - prev_time
     prev_time = t_now
-    angle_z += gyro_z * delta_t
-    return angle_z
+    rs.angle_z += gyro_z * delta_t
+    return rs.angle_z
 
 
 # main:

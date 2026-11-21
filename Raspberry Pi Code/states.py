@@ -1,9 +1,11 @@
 import random
 import numpy as np
+from robot_state import rs # shared live data: rs.found_ball, rs.ball_x, rs.angle_z, ...
+import calibration as cal # tuning numbers from calibration.json
 
 # NOTE: do NOT import philfixeverything here (circular import).
-# The main file passes itself in as `robot`, and we use self.r.<name> so we always
-# see the live values of its globals (found_ball, ball_x, ser, ...).
+# The main file passes itself in as `robot`. Use self.r.<function>() for hardware
+# functions (process_frame, send_command, drive_update, ...) and self.r.ser for serial.
 
 class State_Machine():
     def __init__(self, robot, state_number = -1):
@@ -13,7 +15,6 @@ class State_Machine():
         self.speed = 0
         self.angle = 0
         self.rotation = 0
-        self.angle_z = 0
 
     def defense(self):
 
@@ -26,20 +27,20 @@ class State_Machine():
         self.r.process_frame(["ball", "goal"])
         self.r.imu_thingy_for_stuff()
         # how far off we are from GOAL_HEADING, wrapped to -180..180
-        heading_error = (self.r.GOAL_HEADING - self.r.angle_z + 180) % 360 - 180
+        heading_error = (rs.goal_heading - rs.angle_z + 180) % 360 - 180
 
-        if self.r.found_ball:
+        if rs.found_ball:
             print("defense: found ball")
             self.number = 1
-        elif abs(heading_error) > self.r.DEFENSE_HEADING_TOL:
+        elif abs(heading_error) > cal.DEFENSE_HEADING_TOL:
             # facing the wrong way, rotate toward GOAL_HEADING before backing up
             print(f"defense: wrong way, heading err {heading_error:.1f}, rotating")
             self.r.send_command(0, 0, 90 if heading_error > 0 else -90) # check rotation sign for direction
             self.r.drive_update()
-        elif self.r.found_green_goal and self.r.found_purple_goal:
-            goal_px = abs(self.r.green_x - self.r.purple_x) # gets smaller the further we are from the goal
-            print(f"defense: goal px sep {goal_px:.0f} (target {self.r.DEFENSE_GOAL_PX}), heading err {heading_error:.1f}")
-            if goal_px > self.r.DEFENSE_GOAL_PX:
+        elif rs.found_green_goal and rs.found_purple_goal:
+            goal_px = abs(rs.green_x - rs.purple_x) # gets smaller the further we are from the goal
+            print(f"defense: goal px sep {goal_px:.0f} (target {cal.DEFENSE_GOAL_PX}), heading err {heading_error:.1f}")
+            if goal_px > cal.DEFENSE_GOAL_PX:
                 # still too close to their goal, keep backing up
                 self.r.send_command(150, 180, 0) # 180 = straight back, check angle
             else:
@@ -62,16 +63,16 @@ class State_Machine():
         self.number = -1
         self.r.IR_sensor_read()
         self.r.process_frame(["goal"])
-        if self.r.found_green_goal and self.r.found_purple_goal:
+        if rs.found_green_goal and rs.found_purple_goal:
             print("found both goals")
-            goal_px = abs(self.r.green_x - self.r.purple_x) # gets smaller the further we are from the goal
-            print(f"defense: goal px sep {goal_px:.0f} (target {self.r.DEFENSE_GOAL_PX})")
+            goal_px = abs(rs.green_x - rs.purple_x) # gets smaller the further we are from the goal
+            print(f"defense: goal px sep {goal_px:.0f} (target {cal.DEFENSE_GOAL_PX})")
         
-            if self.r.GOAL_STATE: # purple left goal
-                if self.r.green_x - self.r.purple_x > 0: # green is further right on camera than purple
+            if rs.goal_state: # purple left goal
+                if rs.green_x - rs.purple_x > 0: # green is further right on camera than purple
                     heading = self.r.imu_thingy_for_stuff() # save heading when we see the goal we want
                     print(f"heading 4 goal {heading}")
-                    self.r.GOAL_HEADING = heading
+                    rs.goal_heading = heading
                     self.r.send_command(0,0,0)
                     self.r.ser.write("<STOP>".encode())
                     print("Going to state 0")
@@ -81,10 +82,10 @@ class State_Machine():
                     self.r.drive_update()
                     #turn around faster maybe
             else: # green left goal
-                if self.r.purple_x - self.r.green_x > 0:
+                if rs.purple_x - rs.green_x > 0:
                     heading = self.r.imu_thingy_for_stuff() # save the heading 
                     print(f"heading 4 goal {heading}")
-                    self.r.GOAL_HEADING = heading
+                    rs.goal_heading = heading
                     self.r.send_command(0,0,0)
                     self.r.ser.write("<STOP>".encode())
                     self.number = 0
@@ -115,7 +116,7 @@ class State_Machine():
         """
         self.r.IR_sensor_read()
         self.r.process_frame(["ball", "goal"])
-        if self.r.found_ball:
+        if rs.found_ball:
             self.number = 1
         # backup and cam scan
         self.r.send_command(-100, 0, 0)
@@ -160,11 +161,11 @@ class State_Machine():
         self.r.IR_sensor_read()
         self.r.process_frame(["ball"])
 
-        if self.r.found_ball:
-            predicted_distance = 10.307 - 0.0923 * self.r.ball_r # distance in ft.
-            hor_error = self.r.ball_x - 160  # hor_error is horizontal error from center screen pixel
-            hor_pos = (7 / (2 * self.r.ball_r)) * hor_error
-            if predicted_distance > 2.1: # if the ball is greater than 2ft away we can determine angle to the ball
+        if rs.found_ball:
+            predicted_distance = cal.BALL_DIST_INTERCEPT + cal.BALL_DIST_SLOPE * rs.ball_r # distance in ft.
+            hor_error = rs.ball_x - 160  # hor_error is horizontal error from center screen pixel
+            hor_pos = (cal.BALL_SIZE / (2 * rs.ball_r)) * hor_error
+            if predicted_distance > cal.BALL_CLOSE_FT: # if the ball is greater than 2ft away we can determine angle to the ball
                 self.angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
             else:
                 self.angle = 0 # if we're within 2 ft of the ball, it pretty much takes up the FOV, so set the angle to 0 and CHANGE STATE TO FIND THE GOAL with cam
@@ -190,3 +191,69 @@ class State_Machine():
         This will drive forward for a set amount of time to hit the ball and then stop
         """
         self.r.send_command(200, 0, 0)
+
+    def state_2(self):
+        """
+        Rotating for kick (center goal in frame with rotation then got to state 3)
+
+        check ir
+        check camera for ball and goal pieces ()
+            if one goal piece check with gyro for direction of our desired goal
+        if found ball and both goal, drive to put goal intersection 
+        
+        """
+        self.r.IR_sensor_read()
+        self.r.process_frame(["ball","goal"])
+
+        # if not found_ball:
+        #     print("lost ball while lining up")
+        #     state = 0
+        # elif found_green_goal and found_purple_goal:
+        #     goal_center_x = (green_x + purple_x) / 2
+        #     goal_error = goal_center_x - ball_x  # want goal center lined up behind the ball
+        #     ball_error = ball_x - 160            # keep ball centered in frame
+        #     print(f"goal err {goal_error:.0f}  ball err {ball_error:.0f}")
+        #     if abs(goal_error) < 15 and abs(ball_error) < 20:
+        #         send_command(0, 0, 0)
+        #         drive_update()
+        #         state = 3
+        #     else:
+        #         # orbit the ball: strafe sideways while rotating to keep ball centered
+        #         strafe_angle = 90 if goal_error < 0 else -90   # check sign, negative angle = right
+        #         rotation = -0.5 * ball_error                   # check sign
+        #         send_command(120, strafe_angle, rotation)
+        #         drive_update()
+        # else:
+        #     # cant see both goal posts, use gyro to turn toward GOAL_HEADING
+        #     heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
+        #     print(f"no goal in view, heading err {heading_error:.1f}")
+        #     strafe_angle = 90 if heading_error > 0 else -90    # check sign
+        #     send_command(120, strafe_angle, -0.5 * (ball_x - 160))
+        #     drive_update()
+        pass
+    def state_3(self):
+        # """
+        # Driving into goal (drive straight at goal, kick if enemy hat seen, then state 0)
+        # """
+        # IR_sensor_read()
+        # tilt_cam(110) # look up at goal, check angle
+        # process_frame(["ball", "goal", "hat"])
+        # if found_green_goal and found_purple_goal:
+        #     goal_center_x = (green_x + purple_x) / 2
+        #     rotation = -0.5 * (goal_center_x - 160) # steer toward goal center, check sign
+        #     send_command(255, 0, rotation)
+        # else:
+        #     # hold gyro heading
+        #     heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
+        #     send_command(255, 0, 2 * heading_error) # check sign
+        # drive_update()
+        # print(f"driving to goal cmd {next_command}  hat {found_hat}")
+        # if found_hat:
+        #     print("enemy seen, kick")
+        #     # ser.write("<KICK>".encode()) # arduino does not have a KICK command yet
+        #     tilt_cam(90)
+        #     state = 0
+        # # if not found_ball: (ball may be hidden under camera when tilted up)
+        # #     tilt_cam(90)
+        # #     state = 0
+        pass

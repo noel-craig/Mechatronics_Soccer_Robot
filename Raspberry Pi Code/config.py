@@ -23,6 +23,3 @@ mpu = adafruit_mpu6050.MPU6050(i2c)
 SENSOR_FREQ = 30  # hz
 MOTOR_FREQ = 10  # hz
 IMU_FREQ = 60  # hz
-
-
-spin_dir = random.choice([-90, 90]) # random left or right direction might still be too fast

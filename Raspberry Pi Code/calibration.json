@@ -1,0 +1,32 @@
+{
+  "_comment": "Tuning values loaded once at startup by calibration.py. HSV is OpenCV scale: H 0-179, S 0-255, V 0-255. Restart the program after editing.",
+
+  "hsv": {
+    "ball_red_low":  {"lower": [0, 150, 100],   "upper": [5, 255, 255]},
+    "ball_red_high": {"lower": [170, 150, 100], "upper": [180, 255, 255]},
+    "hat_yellow":    {"lower": [25, 150, 100],  "upper": [40, 255, 255]},
+    "hat_orange":    {"lower": [9, 229, 160],   "upper": [15, 255, 230]},
+    "goal_green":    {"lower": [47, 76, 140],   "upper": [58, 153, 255]},
+    "goal_purple":   {"lower": [110, 140, 100], "upper": [185, 180, 200]}
+  },
+
+  "min_area": {
+    "ball": 1250,
+    "hat": 400,
+    "goal": 50
+  },
+
+  "defense": {
+    "_comment": "goal_px = goal post x separation (px) when we are back at our end of the field. heading_tol = must be within this many degrees of goal heading to back up.",
+    "goal_px": 220,
+    "heading_tol": 90
+  },
+
+  "ball_distance": {
+    "_comment": "distance_ft = intercept_ft + slope_ft_per_px * ball_r. Closer than close_ft the ball fills the view so we drive straight.",
+    "intercept_ft": 10.307,
+    "slope_ft_per_px": -0.0923,
+    "close_ft": 2.1,
+    "ball_size": 7
+  }
+}
