@@ -7,6 +7,21 @@ import calibration as cal # tuning numbers from calibration.json
 # The main file passes itself in as `robot`. Use self.r.<function>() for hardware
 # functions (process_frame, send_command, drive_update, ...) and self.r.ser for serial.
 
+"""The state machine states are outlined as:
+States:
+# -2: Defense mode. switch to 1 when we find the ball
+# -1: initialize (find goal, set gyro)
+# 0: Finding Ball (look around + back up till ball found then state 1)
+# 1: Going To Ball (angle drive until distance is small then state 2) (if lost go to state 0)
+# 2: Rotating for kick (center goal in frame with rotation then got to state 3)
+# 3: Driving into goal (look up at goal and drive straight if other robot seen kick then go to state 0)
+# 4: Zeroing angle (entered if IR sensor tripped from state 0 or 1) 
+    i dont see how this helps, we should check IR in all states, if any trigger drive away from the wall and return to that state to keep going.
+    the time wasted trying to reorient is wasted if the ball bounces off the wall and goes back toward the mid field
+(rotate about triped wheel until 2 sensors trip then enter 0)
+do we want to remove state 0 of find ball because defense should be what we do anyway? 
+"""
+
 class State_Machine():
     def __init__(self, robot, state_number = -1):
         self.r = robot # the main philfixeverything module
@@ -192,7 +207,7 @@ class State_Machine():
         """
         self.r.send_command(200, 0, 0)
 
-    def state_2(self):
+    def rotate_for_kick(self):
         """
         Rotating for kick (center goal in frame with rotation then got to state 3)
 
@@ -205,55 +220,55 @@ class State_Machine():
         self.r.IR_sensor_read()
         self.r.process_frame(["ball","goal"])
 
-        # if not found_ball:
-        #     print("lost ball while lining up")
-        #     state = 0
-        # elif found_green_goal and found_purple_goal:
-        #     goal_center_x = (green_x + purple_x) / 2
-        #     goal_error = goal_center_x - ball_x  # want goal center lined up behind the ball
-        #     ball_error = ball_x - 160            # keep ball centered in frame
-        #     print(f"goal err {goal_error:.0f}  ball err {ball_error:.0f}")
-        #     if abs(goal_error) < 15 and abs(ball_error) < 20:
-        #         send_command(0, 0, 0)
-        #         drive_update()
-        #         state = 3
-        #     else:
-        #         # orbit the ball: strafe sideways while rotating to keep ball centered
-        #         strafe_angle = 90 if goal_error < 0 else -90   # check sign, negative angle = right
-        #         rotation = -0.5 * ball_error                   # check sign
-        #         send_command(120, strafe_angle, rotation)
-        #         drive_update()
-        # else:
-        #     # cant see both goal posts, use gyro to turn toward GOAL_HEADING
-        #     heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
-        #     print(f"no goal in view, heading err {heading_error:.1f}")
-        #     strafe_angle = 90 if heading_error > 0 else -90    # check sign
-        #     send_command(120, strafe_angle, -0.5 * (ball_x - 160))
-        #     drive_update()
-        pass
-    def state_3(self):
-        # """
-        # Driving into goal (drive straight at goal, kick if enemy hat seen, then state 0)
-        # """
-        # IR_sensor_read()
-        # tilt_cam(110) # look up at goal, check angle
-        # process_frame(["ball", "goal", "hat"])
-        # if found_green_goal and found_purple_goal:
-        #     goal_center_x = (green_x + purple_x) / 2
-        #     rotation = -0.5 * (goal_center_x - 160) # steer toward goal center, check sign
-        #     send_command(255, 0, rotation)
-        # else:
-        #     # hold gyro heading
-        #     heading_error = (GOAL_HEADING - angle_z + 180) % 360 - 180
-        #     send_command(255, 0, 2 * heading_error) # check sign
-        # drive_update()
-        # print(f"driving to goal cmd {next_command}  hat {found_hat}")
-        # if found_hat:
-        #     print("enemy seen, kick")
-        #     # ser.write("<KICK>".encode()) # arduino does not have a KICK command yet
-        #     tilt_cam(90)
-        #     state = 0
-        # # if not found_ball: (ball may be hidden under camera when tilted up)
-        # #     tilt_cam(90)
-        # #     state = 0
-        pass
+        # WE MAY NEED TO REMOVE THIS FIRST STATEMENT.  WHEN THE BALL IS CLOSE IT TAKES UP FOV
+        if not rs.found_ball:
+            print("lost ball while lining up")
+            self.number = 0
+        elif rs.found_green_goal and rs.found_purple_goal:
+            goal_center_x = (rs.green_x + rs.purple_x) / 2
+            goal_error = goal_center_x - rs.ball_x  # want goal center lined up behind the ball
+            ball_error = rs.ball_x - 160            # keep ball centered in frame
+            print(f"goal err {goal_error:.0f}  ball err {ball_error:.0f}")
+            if abs(goal_error) < 15 and abs(ball_error) < 20:
+                self.r.send_command(0, 0, 0)
+                self.r.drive_update()
+                self.number = 3
+            else:
+                # orbit the ball: strafe sideways while rotating to keep ball centered
+                strafe_angle = 90 if goal_error < 0 else -90   # check sign, negative angle = right
+                rotation = -0.5 * ball_error                   # check sign
+                self.r.send_command(120, strafe_angle, rotation)
+                self.r.drive_update()
+        else:
+            # cant see both goal posts, use gyro to turn toward GOAL_HEADING
+            heading_error = (rs.goal_heading - rs.angle_z + 180) % 360 - 180
+            print(f"no goal in view, heading err {heading_error:.1f}")
+            strafe_angle = 90 if heading_error > 0 else -90    # check sign
+            self.r.send_command(120, strafe_angle, -0.5 * (rs.ball_x - 160))
+            self.r.drive_update()
+
+    def drive_into_goal(self):
+        """
+        Driving into goal (drive straight at goal, kick if enemy hat seen, then state 0)
+        """
+        self.r.IR_sensor_read()
+        self.r.tilt_cam(110) # look up at goal, check angle
+        self.r.process_frame(["ball", "goal", "hat"])
+        if rs.found_green_goal and rs.found_purple_goal:
+            goal_center_x = (rs.green_x + rs.purple_x) / 2
+            rotation = -0.5 * (goal_center_x - 160) # steer toward goal center, check sign
+            self.r.send_command(255, 0, rotation)
+        else:
+            # hold gyro heading
+            heading_error = (rs.goal_heading - rs.angle_z + 180) % 360 - 180
+            self.r.send_command(255, 0, 2 * heading_error) # check sign
+        self.r.drive_update()
+        print(f"driving to goal cmd {next_command}  hat {found_hat}")
+        if rs.found_hat:
+            print("enemy seen, kick")
+            # ser.write("<KICK>".encode()) # arduino does not have a KICK command yet
+            self.r.tilt_cam(90)
+            self.number = 0
+        # if not rs.found_ball: (ball may be hidden under camera when tilted up)
+        #     self.r.tilt_cam(90)
+        #     self.number = 0

@@ -1,45 +1,19 @@
 """
-Tema Brute force mechatronics robot code that will win because we want it to
+Team Brute Force mechatronics robot code that will win because we want it to
 
 The computer vision is through opencv and detecting color ranges
 
-to start you need to get into the vitrual environment
-
-source .venv/bin/activate
-
-The state machine states are outline as:
-# States:
-# -2: Defense mode. switch to 1 when we find the ball
-# -1: initialize (find goal, set gyro)
-# 0: Finding Ball (look around + back up till ball found then state 1)
-# 1: Going To Ball (angle drive until distance is small then state 2) (if lost go to state 0)
-# 2: Rotating for kick (center goal in frame with rotation then got to state 3)
-# 3: Driving into goal (look up at goal and drive straight if other robot seen kick then go to state 0)
-# 4: Zeroing angle (entered if IR sensor tripped from state 0 or 1) 
-i dont see how this helps, we should check IR in all states, if any trigger drive away from the wall and return to that state to keep going.
-the time wasted trying to reorient is wasted if the ball bounces off the wall and goes back toward the mid field
-# (rotate about triped wheel until 2 sensors trip then enter 0)
-
-
 TODO
-add comments NC
-actually add scheduler (maybe not and just limit speed for motor)
-get purple and green thresh going (test in class)
+actually add scheduler? (maybe not and just limit speed for motor)
 distance estimate based on pixel distance of the goal posts (add in state)
 
-do we want to remove state 0 of find ball because defense should be what we do anyway? 
-
-
-states fully defined for testing (make testing easy with locked in state and somefeedback on if it is working)
-run ir all times to check if we gonna crash
-
 to test:
-orange
-imu 90 degree good enough for goal check
-speed for ball chasing
-defense mode
-do we need state 0 of back up to find ball, defense state does that.
-scoring state logic
+    orange
+    imu 90 degree good enough for goal check
+    speed for ball chasing
+    defense mode
+    do we need state 0 of back up to find ball, defense state does that?
+    scoring state logic
 """
 
 import threading
@@ -59,27 +33,6 @@ from config import * # hardware: pins, servos, imu
 from calibration import * # tuning numbers from calibration.json
 from robot_state import rs # shared live state (found_ball, ball_x, angle_z, ...)
 
-
-# fl_sensor = 23 # front left GPIO pin
-# fr_sensor = 27 # back left GPIO pin
-# bl_sensor = 17 # front right GPIO pin
-# br_sensor = 22 # Back right GPIO pin
-# goal_switch = 5 # high = purple left, low = green left
-# hat_switch = 6 # high = yellow hat low = orange hat
-# switch_high = 10
-# hor_servo = AngularServo(12, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # horizonal rotation servo
-# vert_servo = AngularServo(13, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # vertical servo
-# SERVO_SLEEP = 0.01 # time between angles for servos
-# ser = None
-# picam = None
-# i2c = board.I2C()  # uses board.SCL and board.SDAs
-# adafruit_mpu6050._MPU6050_DEVICE_ID = 0x98
-# mpu = adafruit_mpu6050.MPU6050(i2c)
-# SENSOR_FREQ = 30  # hz
-# MOTOR_FREQ = 10  # hz
-# IMU_FREQ = 60  # hz
-# vision results, heading and switch states live in robot_state.py (rs.found_ball, rs.angle_z, ...)
-# tuning numbers (HSV ranges, min areas, defense values) live in calibration.json
 shutting_down = False
 next_command = "<STOP>"
 should_kick = False
@@ -90,10 +43,8 @@ last_motor_cmd_time = time.time_ns()
 DEBUG_VIEW = True
 SHOW_MASKS = True # also show the black/white threshold masks for each color (great for tuning HSV)
 
-
 state = State_Machine(sys.modules[__name__]) # pass this module in so states.py can call its functions (process_frame, send_command, ...)
 prev_time = time.time()
-
 
 def initialize():
     global ser, picam
@@ -161,7 +112,6 @@ def IR_sensor_read(): # need to get working actually
             elif(br_val):
                 angle = 45
             
-
             # write drive away command
             command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
             ser.write(command.encode())
@@ -328,8 +278,7 @@ def show_debug(img, masks):
         for name, m in masks.items():
             cv2.imshow(f"mask {name}", m)
     cv2.waitKey(1) # REQUIRED for the windows to actually draw
-
-             
+   
 def state_machine():
     # Distances:
     # 2ft ~ r = 88px
@@ -353,19 +302,15 @@ def state_machine():
         elif state.number == 1:
             state.go_to_ball()
         elif state.number == 2:
-            state.state_2()
+            state.rotate_for_kick()
         elif state.number == 3:
-            state.state_3()
+            state.drive_into_goal()
         else:
             state.init()
-        # state 4 uses new noel code
-        # TODO add a bunch of flags for which sections of CV we care about
 
 def send_command(speed, angle, rotation):
     global next_command
     next_command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
-
-
 
 def drive_update():
     global last_motor_cmd_time
@@ -373,12 +318,11 @@ def drive_update():
     if curr_time - last_motor_cmd_time > 1e8:
         ser.write(next_command.encode())
         last_motor_cmd_time = curr_time
-
     else: 
         time.sleep(1/30)
-    # time.sleep(1 / MOTOR_FREQ)
-    # not sleep but add timing and check last time write and make sure enough time
-    # passed between current and the last motor write 
+        # time.sleep(1 / MOTOR_FREQ)
+        # not sleep but add timing and check last time write and make sure enough time
+        # passed between current and the last motor write 
 
 def imu_thingy_for_stuff():
     global prev_time
@@ -393,17 +337,14 @@ def imu_thingy_for_stuff():
     rs.angle_z += gyro_z * delta_t
     return rs.angle_z
 
-
 # main:
 def main():
     global shutting_down, state
     initialize()
-    
     # TODO start the threads
     # TODo: prioritize and shit
     # hard code state for testing 
     state.number = -1
-    
     try:
         state_machine()
         while True:
