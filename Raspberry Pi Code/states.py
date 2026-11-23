@@ -2,6 +2,7 @@ import random
 import numpy as np
 from robot_state import rs # shared live data: rs.found_ball, rs.ball_x, rs.angle_z, ...
 import calibration as cal # tuning numbers from calibration.json
+import time
 
 # NOTE: do NOT import philfixeverything here (circular import).
 # The main file passes itself in as `robot`. Use self.r.<function>() for hardware
@@ -31,6 +32,20 @@ class State_Machine():
         self.angle = 0
         self.rotation = 0
         self.search_start_angle = None
+        self.prev_number = state_number
+        self.state_start_time = time.time() # used for timeouts in states
+
+    def set_state(self, new_number):
+        """
+        Used to handoff state transitions.
+        """
+        if new_number == self.number:
+            return # avoid time spent on this if still in same state
+        print(f"STATE {self.number} -> {new_number}")
+        self.search_start_angle = None # Mostly used for tracking rotations in init
+        self.prev_number = self.number # in case we need to get back to the state from an IR Read
+        self.state_start_time = time.time() # used for timeouts in some methods
+        self.number = new_number # finally set state to new state number
 
     def defense(self):
 
@@ -45,7 +60,7 @@ class State_Machine():
         heading_error = (rs.goal_heading - rs.angle_z + 180) % 360 - 180
         if rs.found_ball:
             print("defense: found ball")
-            self.number = 1
+            self.set_state(1)
         elif abs(heading_error) > cal.DEFENSE_HEADING_TOL:
             # facing the wrong way, rotate toward GOAL_HEADING before backing up
             print(f"defense: wrong way, heading err {heading_error:.1f}, rotating")
@@ -74,12 +89,8 @@ class State_Machine():
         self.number = -1
         Initialize State: We need to find both of the goal colors at the beginning of the match
         """
-        print("INIT STATE STARTED")
-   
-        self.r.process_frame(["goal"]) # we're only looking for the opposing goal and not the ball at this point
 
-        if self.search_start_angle is None:
-            self.search_start_angle = rs.angle_z
+        self.r.process_frame(["goal"]) # we're only looking for the opposing goal and not the ball at this point
         
         if rs.found_green_goal and rs.found_purple_goal:
             print("found both goals")
@@ -88,31 +99,30 @@ class State_Machine():
         
             if rs.goal_state: # purple left goal read from the switch
                 if rs.green_x - rs.purple_x > 0: # green is further right on camera than purple
-                    heading = self.r.imu_thingy_for_stuff() # save heading when we see the goal we want
+                    heading = rs.angle_z # save heading when we see the goal we want
                     print(f"heading 4 goal {heading}")
                     rs.goal_heading = heading
                     self.r.send_command(0,0,0)
                     self.r.ser.write("<STOP>".encode())
                     print("Going to state 0")
                     self.search_start_angle = None
-                    self.number = 0 # go to find ball
+                    self.set_state(0) # go to find ball
                 else: # need to turn around we see the wrong goal
                     self.r.send_command(0,0,self.spin_dir)
                     self.r.drive_update()
 
             else: # green left goal (from goalstateswitch)
                 if rs.purple_x - rs.green_x > 0:
-                    heading = self.r.imu_thingy_for_stuff() # save the heading 
+                    heading = rs.angle_z # save the heading 
                     print(f"heading 4 goal {heading}")
                     rs.goal_heading = heading
                     self.r.send_command(0,0,0)
                     self.r.ser.write("<STOP>".encode())
                     self.search_start_angle = None                     
-                    self.number = 0 # go to find ball
+                    self.set_state(0) # go to find ball
                 else: # need to turn around we see the wrong goal
                     self.r.send_command(0,0,self.spin_dir)
                     self.r.drive_update()
-
         else:
             # we need to keep track of revolutions and then switch to defensive mode after a certain number of revolutions
             revolutions = abs(rs.angle_z - self.search_start_angle) / 360
@@ -120,7 +130,7 @@ class State_Machine():
                 print("no goals after 3 revs, going to defense")
                 self.r.send_command(0,0,0)
                 self.r.drive_update()
-                self.number = -2
+                self.set_state(-2) # go to defense mode
             else:
                 print(f"no goals, spinning ({revolutions:.2f} rev)")
                 self.r.send_command(0,0,self.spin_dir)
@@ -137,7 +147,7 @@ class State_Machine():
         """
         self.r.process_frame(["ball", "goal"])
         if rs.found_ball:
-            self.number = 1
+            self.set_state(1)
         # backup and cam scan
         self.r.send_command(-100, 0, 0)
         self.r.drive_update()
@@ -201,7 +211,7 @@ class State_Machine():
             self.r.send_command(0,0,0)
             self.r.drive_update()
             print("lost ball")
-            self.number = 0 # go back to find the ball now that we lost it
+            self.set_state(0) # go back to find the ball now that we lost it
 
     def PK(self):
         """
@@ -226,7 +236,7 @@ class State_Machine():
         # WE MAY NEED TO REMOVE THIS FIRST STATEMENT.  WHEN THE BALL IS CLOSE IT TAKES UP FOV
         if not rs.found_ball:
             print("lost ball while lining up")
-            self.number = 0
+            self.set_state(0)
         elif rs.found_green_goal and rs.found_purple_goal:
             goal_center_x = (rs.green_x + rs.purple_x) / 2
             goal_error = goal_center_x - rs.ball_x  # want goal center lined up behind the ball
@@ -235,7 +245,7 @@ class State_Machine():
             if abs(goal_error) < 15 and abs(ball_error) < 20:
                 self.r.send_command(0, 0, 0)
                 self.r.drive_update()
-                self.number = 3
+                self.set_state(3)
             else:
                 # orbit the ball: strafe sideways while rotating to keep ball centered
                 strafe_angle = 90 if goal_error < 0 else -90   # check sign, negative angle = right
@@ -270,7 +280,7 @@ class State_Machine():
             print("enemy seen, kick")
             # ser.write("<KICK>".encode()) # arduino does not have a KICK command yet
             self.r.tilt_cam(90)
-            self.number = 0
+            self.set_state(0)
         # if not rs.found_ball: (ball may be hidden under camera when tilted up)
         #     self.r.tilt_cam(90)
         #     self.number = 0
