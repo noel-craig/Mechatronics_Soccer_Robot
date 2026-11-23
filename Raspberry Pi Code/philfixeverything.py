@@ -95,32 +95,32 @@ def update_PK_state():
 
 def IR_sensor_read(): # need to get working actually 
 # Low = Black
-        fl_val = 1 - GPIO.input(fl_sensor)
-        fr_val = 1 - GPIO.input(fr_sensor)
-        bl_val = 1 - GPIO.input(bl_sensor)
-        br_val = 1 - GPIO.input(br_sensor)
+        rs.ir_fl = 1 - GPIO.input(fl_sensor)
+        rs.ir_fr = 1 - GPIO.input(fr_sensor)
+        rs.ir_bl = 1 - GPIO.input(bl_sensor)
+        rs.ir_br = 1 - GPIO.input(br_sensor)
 
-        #print(f"fl: {fl_val}, fr: {fr_val}, bl: {bl_val}, br: {br_val}")
+        print(f"FL = {rs.ir_fl}, FR = {rs.ir_fr}, BL = {rs.ir_bl}, BR = {rs.ir_br}")
 
-        if (fl_val or fr_val or bl_val or br_val):
-            speed = -100
-            rotation = 0
-            if(fl_val):
-                angle = -135
-            elif(fr_val):
-                angle = 135
-            elif(bl_val):
-                angle = -45
-            elif(br_val):
-                angle = 45
+        # if (fl_val or fr_val or bl_val or br_val):
+        #     speed = -100
+        #     rotation = 0
+        #     if(fl_val):
+        #         angle = -135
+        #     elif(fr_val):
+        #         angle = 135
+        #     elif(bl_val):
+        #         angle = -45
+        #     elif(br_val):
+        #         angle = 45
             
-            # write drive away command
-            command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
-            ser.write(command.encode())
-            # wait 1/4 sec
-            time.sleep(0.25) # check if this is long enough
-            # stop it 
-            ser.write("<STOP>".encode())
+        #     # write drive away command
+        #     command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
+        #     ser.write(command.encode())
+        #     # wait 1/4 sec
+        #     time.sleep(0.25) # check if this is long enough
+        #     # stop it 
+        #     ser.write("<STOP>".encode())
 
 #================== SERVO =======================================
 def init_servos():
