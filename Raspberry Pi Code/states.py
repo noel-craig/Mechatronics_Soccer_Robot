@@ -23,6 +23,12 @@ States:
 do we want to remove state 0 of find ball because defense should be what we do anyway? 
 """
 
+def wrap_180(angle):
+    """
+    Takes any angle and returns the same direction expressed in -180 to 180
+    """
+    return (angle + 180) % 360 - 180
+
 class State_Machine():
     def __init__(self, robot, state_number = -1):
         self.r = robot # the main philfixeverything module
@@ -57,7 +63,7 @@ class State_Machine():
         """
         self.r.process_frame(["ball", "goal"]) # process if we can see the ball or the other goal
         # how far off we are from GOAL_HEADING, wrapped to -180..180
-        heading_error = (rs.goal_heading - rs.angle_z + 180) % 360 - 180
+        heading_error = wrap_180(rs.goal_heading - rs.angle_z)
         if rs.found_ball:
             print("defense: found ball")
             self.set_state(1)
@@ -255,7 +261,7 @@ class State_Machine():
                 self.r.drive_update()
         else:
             # cant see both goal posts, use gyro to turn toward GOAL_HEADING
-            heading_error = (rs.goal_heading - rs.angle_z + 180) % 360 - 180
+            heading_error = wrap_180(rs.goal_heading - rs.angle_z)
             print(f"no goal in view, heading err {heading_error:.1f}")
             strafe_angle = 90 if heading_error > 0 else -90    # check sign
             self.r.send_command(120, strafe_angle, -0.5 * (rs.ball_x - 160))
@@ -273,7 +279,7 @@ class State_Machine():
             self.r.send_command(255, 0, rotation)
         else:
             # hold gyro heading
-            heading_error = (rs.goal_heading - rs.angle_z + 180) % 360 - 180
+            heading_error = wrap_180(rs.goal_heading - rs.angle_z)
             self.r.send_command(255, 0, 2 * heading_error) # check sign
         self.r.drive_update()
         print(f"driving to goal cmd {next_command}  hat {found_hat}")

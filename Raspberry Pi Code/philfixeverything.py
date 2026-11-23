@@ -45,6 +45,7 @@ SHOW_MASKS = True # also show the black/white threshold masks for each color (gr
 
 state = State_Machine(sys.modules[__name__]) # pass this module in so states.py can call its functions (process_frame, send_command, ...)
 prev_time = time.time()
+gyro_bias = 0
 
 def initialize():
     global ser, picam
@@ -63,7 +64,8 @@ def initialize():
     rs.goal_state = update_goal_state()
     rs.pk_state = update_PK_state()
     picam.start()
-    time.sleep(2)
+    calibrate_gyro()
+    # time.sleep(2) THIS MOVED INSIDE CALIBRATE GYRO
     print("init complete")
 
 def update_goal_state():
@@ -329,14 +331,37 @@ def imu_thingy_for_stuff():
     global prev_time
     # Read sensor values
     _, _, gyro_z = mpu.gyro
-    gyro_z = np.degrees(gyro_z)
-    if abs(gyro_z) < 2:
+    gyro_z = np.degrees(gyro_z) - gyro_bias
+    if abs(gyro_z) < 0.8:
         gyro_z = 0
     t_now = time.time()
     delta_t = t_now - prev_time
     prev_time = t_now
     rs.angle_z += gyro_z * delta_t
     return rs.angle_z
+
+def calibrate_gyro():
+    """
+    Calibrates the gyro at the beginning of the init to generate the bias.
+    This allows us to have more fine-tuning in the degrees recorded by the gyro.
+    """
+    global gyro_bias, prev_time
+    print("hold still, calibrating gyro...")
+    readings = []
+    start = time.time()
+    # read as many readings over 2 seconds
+    while time.time() - start < 2.0:
+        _,_,gyro_z = mpu.gyro
+        gyro_z = np.degrees(gyro_z)
+        readings.append(gyro_z)
+        time.sleep(0.01)
+    gyro_bias = sum(readings) / len(readings) # average of readings
+    if max(readings) - min(readings) > 5:
+        print("WARNING: GYRO BIAS > 5 degrees")
+    print(f"GYRO BIAS: {gyro_bias:.3f}")
+    prev_time = time.time()
+    rs.angle_z = 0
+
 
 # main:
 def main():
