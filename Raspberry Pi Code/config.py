@@ -4,7 +4,6 @@ import adafruit_mpu6050
 from gpiozero import AngularServo
 
 # GLOBALS READ-ONLY
-
 fl_sensor = 23 # front left GPIO pin
 fr_sensor = 27 # back left GPIO pin
 bl_sensor = 17 # front right GPIO pin

@@ -291,6 +291,7 @@ def state_machine():
     while not shutting_down:
         # run imu for gyro heading (updates rs.angle_z)
         imu_thingy_for_stuff()
+        IR_sensor_read()
         if rs.pk_state:
             state.PK()
         elif state.number == -2:  # defense mode where the hell da ball

@@ -30,20 +30,19 @@ class State_Machine():
         self.speed = 0
         self.angle = 0
         self.rotation = 0
+        self.search_start_angle = None
 
     def defense(self):
 
         """
+        state.number = -2
         Defense: face the goal we score on (with +/-90 deg of GOAL_HEADING),
             back-up toward our own goal until the opposing goal posts look close enough together,
             then wait until we see the ball.
         """
-        self.r.IR_sensor_read()
-        self.r.process_frame(["ball", "goal"])
-        self.r.imu_thingy_for_stuff()
+        self.r.process_frame(["ball", "goal"]) # process if we can see the ball or the other goal
         # how far off we are from GOAL_HEADING, wrapped to -180..180
         heading_error = (rs.goal_heading - rs.angle_z + 180) % 360 - 180
-
         if rs.found_ball:
             print("defense: found ball")
             self.number = 1
@@ -72,18 +71,22 @@ class State_Machine():
 
     def init(self):
         """
-        Initialize State:
-        """
-        #print(f"the state is {state}")
         self.number = -1
-        self.r.IR_sensor_read()
-        self.r.process_frame(["goal"])
+        Initialize State: We need to find both of the goal colors at the beginning of the match
+        """
+        print("INIT STATE STARTED")
+   
+        self.r.process_frame(["goal"]) # we're only looking for the opposing goal and not the ball at this point
+
+        if self.search_start_angle is None:
+            self.search_start_angle = rs.angle_z
+        
         if rs.found_green_goal and rs.found_purple_goal:
             print("found both goals")
             goal_px = abs(rs.green_x - rs.purple_x) # gets smaller the further we are from the goal
             print(f"defense: goal px sep {goal_px:.0f} (target {cal.DEFENSE_GOAL_PX})")
         
-            if rs.goal_state: # purple left goal
+            if rs.goal_state: # purple left goal read from the switch
                 if rs.green_x - rs.purple_x > 0: # green is further right on camera than purple
                     heading = self.r.imu_thingy_for_stuff() # save heading when we see the goal we want
                     print(f"heading 4 goal {heading}")
@@ -91,45 +94,47 @@ class State_Machine():
                     self.r.send_command(0,0,0)
                     self.r.ser.write("<STOP>".encode())
                     print("Going to state 0")
-                    self.number = 0
+                    self.search_start_angle = None
+                    self.number = 0 # go to find ball
                 else: # need to turn around we see the wrong goal
                     self.r.send_command(0,0,self.spin_dir)
                     self.r.drive_update()
-                    #turn around faster maybe
-            else: # green left goal
+
+            else: # green left goal (from goalstateswitch)
                 if rs.purple_x - rs.green_x > 0:
                     heading = self.r.imu_thingy_for_stuff() # save the heading 
                     print(f"heading 4 goal {heading}")
                     rs.goal_heading = heading
                     self.r.send_command(0,0,0)
                     self.r.ser.write("<STOP>".encode())
-                    self.number = 0
-                else: 
+                    self.search_start_angle = None                     
+                    self.number = 0 # go to find ball
+                else: # need to turn around we see the wrong goal
                     self.r.send_command(0,0,self.spin_dir)
-                    # troubleshoot try to drive fwd
-                    # send command(100,0,0) it did not drive right
                     self.r.drive_update()
+
         else:
-            # didnt find goals keep spinning
-            print("no goals, spinning")
-            #tilt_cam(135)
-            #time.sleep(1)
-            #tilt_cam(90)
-            #time.sleep(1)
-            self.r.send_command(0, 0, self.spin_dir)
-            self.r.drive_update()
+            # we need to keep track of revolutions and then switch to defensive mode after a certain number of revolutions
+            revolutions = abs(rs.angle_z - self.search_start_angle) / 360
+            if revolutions >= 3:
+                print("no goals after 3 revs, going to defense")
+                self.r.send_command(0,0,0)
+                self.r.drive_update()
+                self.number = -2
+            else:
+                print(f"no goals, spinning ({revolutions:.2f} rev)")
+                self.r.send_command(0,0,self.spin_dir)
+                self.r.drive_update()
 
     def find_ball(self):
         """
-        Finding Ball (look around + back up till ball found then state 1)
-
+        Finding Ball (spin around until ball found, then state 1)
         check ir
         check camera for ball
         cam scan
         if found_ball true, change to state 1  
         if ball too damn close, state 2
         """
-        self.r.IR_sensor_read()
         self.r.process_frame(["ball", "goal"])
         if rs.found_ball:
             self.number = 1
@@ -173,7 +178,6 @@ class State_Machine():
         if found ball false, go to state 0 
         process_frame(["ball"])
         """
-        self.r.IR_sensor_read()
         self.r.process_frame(["ball"])
 
         if rs.found_ball:
@@ -217,7 +221,6 @@ class State_Machine():
         if found ball and both goal, drive to put goal intersection 
         
         """
-        self.r.IR_sensor_read()
         self.r.process_frame(["ball","goal"])
 
         # WE MAY NEED TO REMOVE THIS FIRST STATEMENT.  WHEN THE BALL IS CLOSE IT TAKES UP FOV
@@ -251,7 +254,6 @@ class State_Machine():
         """
         Driving into goal (drive straight at goal, kick if enemy hat seen, then state 0)
         """
-        self.r.IR_sensor_read()
         self.r.tilt_cam(110) # look up at goal, check angle
         self.r.process_frame(["ball", "goal", "hat"])
         if rs.found_green_goal and rs.found_purple_goal:
