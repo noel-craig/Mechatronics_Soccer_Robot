@@ -58,7 +58,7 @@ def initialize():
     GPIO.setup(fl_sensor, GPIO.IN); GPIO.setup(bl_sensor, GPIO.IN); GPIO.setup(fr_sensor, GPIO.IN); GPIO.setup(br_sensor, GPIO.IN)
     # init goal switch and hat switch
     GPIO.setup(goal_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
-    GPIO.setup(pk_switch, GPIO.IN, pull_up_down = GPIO.PUD_UP)
+    GPIO.setup(pk_switch, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
     init_servos() # initialize camera servos
     rs.goal_state = update_goal_state()
     rs.pk_state = update_PK_state()
