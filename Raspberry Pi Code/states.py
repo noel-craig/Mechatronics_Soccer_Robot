@@ -91,6 +91,9 @@ class State_Machine():
         """
 
         self.r.process_frame(["goal"]) # we're only looking for the opposing goal and not the ball at this point
+
+        if self.search_start_angle is None:
+            self.search_start_angle = rs.angle_z
         
         if rs.found_green_goal and rs.found_purple_goal:
             print("found both goals")
@@ -105,7 +108,6 @@ class State_Machine():
                     self.r.send_command(0,0,0)
                     self.r.ser.write("<STOP>".encode())
                     print("Going to state 0")
-                    self.search_start_angle = None
                     self.set_state(0) # go to find ball
                 else: # need to turn around we see the wrong goal
                     self.r.send_command(0,0,self.spin_dir)
@@ -117,8 +119,7 @@ class State_Machine():
                     print(f"heading 4 goal {heading}")
                     rs.goal_heading = heading
                     self.r.send_command(0,0,0)
-                    self.r.ser.write("<STOP>".encode())
-                    self.search_start_angle = None                     
+                    self.r.ser.write("<STOP>".encode())                 
                     self.set_state(0) # go to find ball
                 else: # need to turn around we see the wrong goal
                     self.r.send_command(0,0,self.spin_dir)
