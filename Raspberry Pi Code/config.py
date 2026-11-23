@@ -12,8 +12,19 @@ br_sensor = 22 # Back right GPIO pin
 goal_switch = 5 # high = purple left, low = green left
 pk_switch = 6 # high = yellow hat low = orange hat
 switch_high = 10
-hor_servo = AngularServo(12, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # horizonal rotation servo
-vert_servo = AngularServo(13, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025) # vertical servo
+# Servo pin factory: pigpio gives hardware-timed pulses (no jitter).
+# Needs the daemon running first: sudo pigpiod   (or enable at boot: sudo systemctl enable --now pigpiod)
+# pigpio does NOT work on a Pi 5. If this falls back, servos will still jitter.
+try:
+    from gpiozero.pins.pigpio import PiGPIOFactory
+    servo_factory = PiGPIOFactory()
+    print("servos: using pigpio (hardware timed)")
+except Exception as e:
+    servo_factory = None # gpiozero default = software PWM (jittery)
+    print(f"servos: pigpio unavailable ({e}), using software PWM - expect jitter")
+
+hor_servo = AngularServo(12, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025, pin_factory = servo_factory) # horizonal rotation servo
+vert_servo = AngularServo(13, min_angle = 0, max_angle = 180, min_pulse_width = 0.0005, max_pulse_width = 0.0025, pin_factory = servo_factory) # vertical servo
 SERVO_SLEEP = 0.01 # time between angles for servos
 ser = None
 picam = None
