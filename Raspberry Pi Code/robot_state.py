@@ -37,7 +37,7 @@ class RobotState:
 
         # ---- heading (from imu_thingy_for_stuff) ----
         self.angle_z = 0 # integrated gyro heading in degrees
-        self.goal_heading = 90 # heading that faces the goal we score on, set in the init state
+        self.goal_heading = 0 # heading that faces the goal we score on, set in the init state
 
         # ---- switches (read in initialize) ----
         self.goal_state = 0 # 1 = purple left, 0 = green left

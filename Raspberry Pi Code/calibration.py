@@ -57,3 +57,10 @@ TURN_K = CAL["turn"]["k"]
 TURN_MAX_ROT = CAL["turn"]["max_rot"]
 TURN_MIN_ROT = CAL["turn"]["min_rot"]
 TURN_TOL = CAL["turn"]["tol"]
+
+# ---- init ----
+INIT_SETTLE = CAL["init"]["settle"]
+INIT_LOOK_TIME = CAL["init"]["look_time"]
+INIT_STEP_DEG = CAL["init"]["step_deg"]
+INIT_MAX_STEPS = CAL["init"]["max_steps"]
+INIT_TIMEOUT = CAL["init"]["timeout"]

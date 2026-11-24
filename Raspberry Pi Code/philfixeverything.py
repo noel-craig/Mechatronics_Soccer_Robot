@@ -364,6 +364,8 @@ def calibrate_gyro():
 def main():
     global shutting_down, state
     initialize()
+    state.state_start_time = time.time()
+    state.phase_start = time.time()
     # TODO start the threads
     # TODo: prioritize and shit
     # hard code state for testing 

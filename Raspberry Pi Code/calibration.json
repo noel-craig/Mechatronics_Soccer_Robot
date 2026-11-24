@@ -44,5 +44,13 @@
   "camera" : {
     "deg_per_px": 0.195,
     "pan_sign": 1
+  },
+
+  "init" : {
+    "settle": 0.25,
+    "look_time": 0.3,
+    "step_deg": 45,
+    "max_steps": 8,
+    "timeout": 15
   }
 }

@@ -37,11 +37,14 @@ class State_Machine():
         self.speed = 0
         self.angle = 0
         self.rotation = 0
-        self.search_start_angle = None
         self.prev_number = state_number
         self.state_start_time = time.time() # used for timeouts in states
         self.escape_until = 0
         self.escape_angle = 0
+        self.init_phase = "look"
+        self.phase_start = time.time()
+        self.init_steps = 0
+        self.init_target = 0
 
     def set_state(self, new_number):
         """
@@ -50,7 +53,10 @@ class State_Machine():
         if new_number == self.number:
             return # avoid time spent on this if still in same state
         print(f"STATE {self.number} -> {new_number}")
-        self.search_start_angle = None # Mostly used for tracking rotations in init
+        self.init_phase = "look"
+        self.phase_start = time.time()
+        self.init_steps = 0
+        self.init_target = 0
         self.prev_number = self.number # in case we need to get back to the state from an IR Read
         self.state_start_time = time.time() # used for timeouts in some methods
         self.number = new_number # finally set state to new state number
@@ -152,58 +158,63 @@ class State_Machine():
             self.r.send_command(0, 0, 60 if heading_error > 0 else -60) # check rotation sign
             self.r.drive_update()
 
+    def _init_phase(self, phase):
+        """switch Init's sub-phase and restart its timer"""
+        print(f"  init: {self.init_phase} -> {phase}")
+        self.init_phase = phase
+        self.phase_start = time.time()
+
     def init(self):
         """
-        self.number = -1
-        Initialize State: We need to find both of the goal colors at the beginning of the match
+        state -1: find the goal we score on and save rs.goal_heading
+        Phases: look(stopped) -> turn 45deg -> look ... -> face goal -> state 0
         """
+        now = time.time()
 
-        self.r.process_frame(["goal"]) # we're only looking for the opposing goal and not the ball at this point
-
-        if self.search_start_angle is None:
-            self.search_start_angle = rs.angle_z
-        
-        if rs.found_green_goal and rs.found_purple_goal:
-            print("found both goals")
-            goal_px = abs(rs.green_x - rs.purple_x) # gets smaller the further we are from the goal
-            print(f"defense: goal px sep {goal_px:.0f} (target {cal.DEFENSE_GOAL_PX})")
-        
-            if rs.goal_state: # purple left goal read from the switch
-                if rs.green_x - rs.purple_x > 0: # green is further right on camera than purple
-                    heading = rs.angle_z # save heading when we see the goal we want
-                    print(f"heading 4 goal {heading}")
-                    rs.goal_heading = heading
-                    self.r.send_command(0,0,0)
-                    self.r.ser.write("<STOP>".encode())
-                    print("Going to state 0")
-                    self.set_state(0) # go to find ball
-                else: # need to turn around we see the wrong goal
-                    self.r.send_command(0,0,self.spin_dir)
-                    self.r.drive_update()
-
-            else: # green left goal (from goalstateswitch)
-                if rs.purple_x - rs.green_x > 0:
-                    heading = rs.angle_z # save the heading 
-                    print(f"heading 4 goal {heading}")
-                    rs.goal_heading = heading
-                    self.r.send_command(0,0,0)
-                    self.r.ser.write("<STOP>".encode())                 
-                    self.set_state(0) # go to find ball
-                else: # need to turn around we see the wrong goal
-                    self.r.send_command(0,0,self.spin_dir)
-                    self.r.drive_update()
-        else:
-            # we need to keep track of revolutions and then switch to defensive mode after a certain number of revolutions
-            revolutions = abs(rs.angle_z - self.search_start_angle) / 360
-            if revolutions >= 3:
-                print("no goals after 3 revs, going to defense")
+        # overall safety net. never get stuck in init
+        if self.init_phase != "face" and now - self.state_start_time > cal.INIT_TIMEOUT:
+            print("init: timeout, assuming start heading faces goal")
+            rs.goal_heading = 0
+            self._init_phase("face")
+        if self.init_phase == "look":
+            # let the robot finish coasting before trusting the camera
+            if now - self.phase_start < cal.INIT_SETTLE:
                 self.r.send_command(0,0,0)
                 self.r.drive_update()
-                self.set_state(-2) # go to defense mode
-            else:
-                print(f"no goals, spinning ({revolutions:.2f} rev)")
-                self.r.send_command(0,0,self.spin_dir)
-                self.r.drive_update()
+                return
+
+            self.r.process_frame(["goal"])
+            if rs.found_green_goal and rs.found_purple_goal:
+                g = self.bearing_to(rs.green_x)
+                pu = self.bearing_to(rs.purple_x)
+                sep = wrap_180(pu - g) # + = purple is LEFT of green
+                purple_left = sep > 0
+                if purple_left == bool(rs.goal_state):
+                    rs.goal_heading = wrap_180(g + sep/2)
+                    print(f"init: goal found, heading {rs.goal_heading:.1f}")
+                    self._init_phase("face")
+                    return
+                # wrong goal: ignore it and keep looking
+
+            # looked long enough without finding it -> turn another step (or give up)
+            if now - self.phase_start > cal.INIT_SETTLE + cal.INIT_LOOK_TIME:
+                if self.init_steps >= cal.INIT_MAX_STEPS:
+                    print("init: full circle, no goal, assuming start heading")
+                    rs.goal_heading = 0
+                    self._init_phase("face")
+                else:
+                    direction = 1 if self.spin_dir > 0 else -1
+                    self.init_target = wrap_180(rs.angle_z + direction * cal.INIT_STEP_DEG)
+                    self.init_steps += 1
+                    self._init_phase("turn")
+        elif self.init_phase == "turn":
+            if self.turn_toward(self.init_target):
+                self._init_phase("look")
+        elif self.init_phase == "face":
+            if self.turn_toward(rs.goal_heading):
+                self.set_state(0)
+
+
 
     def find_ball(self):
         """
