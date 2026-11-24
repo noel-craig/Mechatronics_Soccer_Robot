@@ -28,5 +28,10 @@
     "slope_ft_per_px": -0.0923,
     "close_ft": 2.1,
     "ball_size": 7
+  },
+
+  "escape" : {
+    "escape_speed": 120,
+    "escape_time" : 0.3
   }
 }

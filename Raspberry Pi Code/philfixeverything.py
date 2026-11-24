@@ -100,7 +100,7 @@ def IR_sensor_read(): # need to get working actually
         rs.ir_bl = 1 - GPIO.input(bl_sensor)
         rs.ir_br = 1 - GPIO.input(br_sensor)
 
-        print(f"FL = {rs.ir_fl}, FR = {rs.ir_fr}, BL = {rs.ir_bl}, BR = {rs.ir_br}")
+        # print(f"FL = {rs.ir_fl}, FR = {rs.ir_fr}, BL = {rs.ir_bl}, BR = {rs.ir_br}")
 
         # if (fl_val or fr_val or bl_val or br_val):
         #     speed = -100
@@ -294,6 +294,10 @@ def state_machine():
         # run imu for gyro heading (updates rs.angle_z)
         imu_thingy_for_stuff()
         IR_sensor_read()
+
+        if state.check_escape():
+            continue
+        
         if rs.pk_state:
             state.PK()
         elif state.number == -2:  # defense mode where the hell da ball
@@ -358,7 +362,7 @@ def calibrate_gyro():
         time.sleep(0.01)
     gyro_bias = sum(readings) / len(readings) # average of readings
     if max(readings) - min(readings) > 5:
-        print("WARNING: GYRO BIAS > 5 degrees")
+        print("WARNING: GYRO BIAS > 5 degrees. Robot Moved.")
     print(f"GYRO BIAS: {gyro_bias:.3f}")
     prev_time = time.time()
     rs.angle_z = 0

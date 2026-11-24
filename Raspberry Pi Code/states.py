@@ -40,6 +40,8 @@ class State_Machine():
         self.search_start_angle = None
         self.prev_number = state_number
         self.state_start_time = time.time() # used for timeouts in states
+        self.escape_until = 0
+        self.escape_angle = 0
 
     def set_state(self, new_number):
         """
@@ -52,6 +54,39 @@ class State_Machine():
         self.prev_number = self.number # in case we need to get back to the state from an IR Read
         self.state_start_time = time.time() # used for timeouts in some methods
         self.number = new_number # finally set state to new state number
+
+    def check_escape(self):
+        """
+        Check if the robot needs to escape the white line using the IR sensors
+        Called once per tick from the main loop.
+        Returns True if we are escaping this tick (main loop should skip the state),
+        False otherwise.
+        """
+        now = time.time()
+        already_escaping = now < self.escape_until
+        fl, fr, bl, br = rs.ir_fl, rs.ir_fr, rs.ir_bl, rs.ir_br
+
+        if fl or fr or bl or br:
+            # each tripped corner pushes us away from itself
+            forward_push = (bl+br) - (fl + fr) # + = move forward
+            left_push = (fr + br) - (fl + bl) # - = move left
+            if forward_push == 0 and left_push == 0:
+                # diagonal pair or all four: no clear direction, just stop
+                self.r.send_command(0,0,0)
+                self.r.drive_update()
+                return True
+            self.escape_angle = np.degrees(np.arctan2(left_push, forward_push))
+            self.escape_until = now + cal.ESCAPE_TIME
+            if not already_escaping:
+                print(f"ESCAPE {self.escape_angle:.0f}")
+
+        if now < self.escape_until:
+            # still escaping: slide away, no rotation
+            self.r.send_command(cal.ESCAPE_SPEED, self.escape_angle, 0)
+            self.r.drive_update()
+            return True
+
+        return False
 
     def defense(self):
 
@@ -78,6 +113,7 @@ class State_Machine():
             if goal_px > cal.DEFENSE_GOAL_PX:
                 # still too close to their goal, keep backing up
                 self.r.send_command(150, 180, 0) # 180 = straight back, check angle
+                self.r.drive_update()
             else:
                 # at our end of the field, stop and wait for the ball
                 print("defense: in position")
@@ -227,6 +263,7 @@ class State_Machine():
         This will drive forward for a set amount of time to hit the ball and then stop
         """
         self.r.send_command(200, 0, 0)
+        self.r.drive_update()
 
     def rotate_for_kick(self):
         """
@@ -282,7 +319,7 @@ class State_Machine():
             heading_error = wrap_180(rs.goal_heading - rs.angle_z)
             self.r.send_command(255, 0, 2 * heading_error) # check sign
         self.r.drive_update()
-        print(f"driving to goal cmd {next_command}  hat {found_hat}")
+        print(f"driving to goal cmd {self.r.next_command}  hat {rs.found_hat}")
         if rs.found_hat:
             print("enemy seen, kick")
             # ser.write("<KICK>".encode()) # arduino does not have a KICK command yet
