@@ -104,7 +104,7 @@ class State_Machine():
         """
         error = wrap_180(target_heading - rs.angle_z)
         if abs(error) < cal.TURN_TOL:
-            self.r.send_commang(0,0,0)
+            self.r.send_command(0,0,0)
             self.r.drive_update(force=True)
             return True
 
