@@ -97,6 +97,23 @@ class State_Machine():
         pixel_offset = -(x_px - 160) * cal.CAM_DEG_PER_PX # right of center = negative
         return wrap_180(rs.angle_z + pan_offset + pixel_offset)
 
+    def turn_toward(self, target_heading):
+        """
+        One tick of a proportional turn toward an absolute heading (+ = left / CCW).
+        Returns True when within TURN_TOL (and the robot is stopped), False while still turning.
+        """
+        error = wrap_180(target_heading - rs.angle_z)
+        if abs(error) < cal.TURN_TOL:
+            self.r.send_commang(0,0,0)
+            self.r.drive_update(force=True)
+            return True
+
+        rot = cal.TURN_K * abs(error)
+        rot = max(cal.TURN_MIN_ROT, min(cal.TURN_MAX_ROT, rot))
+        self.r.send_command(0, 0, rot if error > 0 else -rot)
+        self.r.drive_update()
+        return False
+
     def defense(self):
 
         """

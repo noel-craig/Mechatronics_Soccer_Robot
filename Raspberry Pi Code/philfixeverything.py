@@ -303,10 +303,10 @@ def send_command(speed, angle, rotation):
     # Python side: + angle = left, + rotation = CCW. Arduino is opposite, so both are negated here.
     next_command = f"<DRIVE|{int(speed)}, {int(-angle)}, {int(-rotation)}>"
 
-def drive_update():
+def drive_update(force = False):
     global last_motor_cmd_time
     curr_time = time.time_ns()
-    if curr_time - last_motor_cmd_time > 1e8:
+    if force or curr_time - last_motor_cmd_time > 1e8:
         ser.write(next_command.encode())
         last_motor_cmd_time = curr_time
     else: 

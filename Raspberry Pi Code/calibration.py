@@ -51,3 +51,9 @@ ESCAPE_TIME = CAL["escape"]["escape_time"]
 # ---- camera ----
 CAM_PAN_SIGN = CAL["camera"]["pan_sign"]
 CAM_DEG_PER_PX = CAL["camera"]["deg_per_px"]
+
+# ---- turning ----
+TURN_K = CAL["turn"]["k"]
+TURN_MAX_ROT = CAL["turn"]["max_rot"]
+TURN_MIN_ROT = CAL["turn"]["min_rot"]
+TURN_TOL = CAL["turn"]["tol"]

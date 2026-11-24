@@ -35,10 +35,10 @@
   },
 
   "turn" : {
-    "turn_k": 1.5,
-    "turn_max_rot": 100,
-    "turn_min_rot": 50,
-    "turn_tol": 5
+    "k": 1.5,
+    "max_rot": 100,
+    "min_rot": 50,
+    "tol": 5
   },
 
   "camera" : {
