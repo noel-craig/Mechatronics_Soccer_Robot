@@ -183,19 +183,28 @@ class State_Machine():
                 self.r.drive_update()
                 return
 
-            self.r.process_frame(["goal"])
-            if rs.found_green_goal and rs.found_purple_goal:
-                g = self.bearing_to(rs.green_x)
-                pu = self.bearing_to(rs.purple_x)
-                sep = wrap_180(pu - g) # + = purple is LEFT of green
-                purple_left = sep > 0
-                if purple_left == bool(rs.goal_state):
-                    rs.goal_heading = wrap_180(g + sep/2)
-                    print(f"init: goal found, heading {rs.goal_heading:.1f}")
-                    self._init_phase("face")
-                    return
+# PUT THESE LINES BACK IN ONCE I CAN SENSE A GOAL
+            # self.r.process_frame(["goal"])
+            # if rs.found_green_goal and rs.found_purple_goal:
+            #     g = self.bearing_to(rs.green_x)
+            #     pu = self.bearing_to(rs.purple_x)
+            #     sep = wrap_180(pu - g) # + = purple is LEFT of green
+            #     purple_left = sep > 0
+            #     if purple_left == bool(rs.goal_state):
+            #         rs.goal_heading = wrap_180(g + sep/2)
+            #         print(f"init: goal found, heading {rs.goal_heading:.1f}")
+            #         self._init_phase("face")
+            #         return
                 # wrong goal: ignore it and keep looking
-
+# =========================== TAKE THIS OUT ONCE I HAVE A GOAL TO LOOK AT =======
+            self.r.process_frame(["ball"])
+            if rs.found_ball:
+                rs.goal_heading = self.bearing_to(rs.ball_x)
+                print(f"init: (ball test) heading {rs.goal_heading:.1f}")
+                self._init_phase("face")
+                return
+# ===============================================================================
+            
             # looked long enough without finding it -> turn another step (or give up)
             if now - self.phase_start > cal.INIT_SETTLE + cal.INIT_LOOK_TIME:
                 if self.init_steps >= cal.INIT_MAX_STEPS:
