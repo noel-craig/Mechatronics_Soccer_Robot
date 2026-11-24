@@ -33,5 +33,12 @@
   "escape" : {
     "escape_speed": 120,
     "escape_time" : 0.3
+  },
+
+  "turn" : {
+    "turn_k": 1.5,
+    "turn_max_rot": 100,
+    "turn_min_rot": 50,
+    "turn_tol": 5
   }
 }

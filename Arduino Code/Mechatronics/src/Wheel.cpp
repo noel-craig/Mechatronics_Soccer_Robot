@@ -16,7 +16,7 @@ void Wheel::init() {
 
 void Wheel::setSpeed(int speed) {
     int setSpeed = (int) (speed * _correction_factor); // Apply correction factor
-    constrain(setSpeed, -255,255)
+    setSpeed = constrain(setSpeed, -255,255); // never exceed PWM range
     if(setSpeed > 0) {
         forward(setSpeed);
     } else if (setSpeed < 0) {

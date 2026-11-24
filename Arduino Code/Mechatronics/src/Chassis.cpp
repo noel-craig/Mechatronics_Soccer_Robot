@@ -92,11 +92,34 @@ void Chassis::rotateAbout(int speed, int wheel) {
 
 void Chassis::angleDriveRotate(int speed, int angle, int rotation_speed) {
     // float rat = rotation_speed / (speed+rotation_speed);
-    float fl_br_speed = sin(radians(angle+45))*speed; // * (1 - rat);
-    float fr_bl_speed = sin(radians(angle+135))*speed; // * (1 - rat);
+    // translation part
+    float fl_br = sin(radians(angle+45))*speed; // * (1 - rat);
+    float fr_bl = sin(radians(angle+135))*speed; // * (1 - rat);
     // rotation_speed = rotation_speed * rat;
-    front_left.setSpeed(fl_br_speed + rotation_speed);
-    back_right.setSpeed(fl_br_speed - rotation_speed);
-    front_right.setSpeed(fr_bl_speed - rotation_speed);
-    back_left.setSpeed(fr_bl_speed + rotation_speed);
+
+    // add rotation straight on
+    float fl = fl_br + rotation_speed;
+    float br = fl_br - rotation_speed;
+    float fr = fr_bl - rotation_speed;
+    float bl = fr_bl + rotation_speed;
+
+    // find the biggest wheel command (ignores sign)
+    float largest = fabs(fl);
+    if (fabs(fr)>largest) largest = fabs(fr);
+    if (fabs(bl)>largest) largest = fabs(bl);
+    if (fabs(br)>largest) largest = fabs(br);
+
+    // if any wheel is over 255, shrink all four by the same ratio
+    if (largest >255.0) {
+        float scale = 255.0/largest;
+        fl *= scale;
+        fr *= scale;
+        bl *= scale;
+        br *= scale;
+    }
+    // send to wheels
+    front_left.setSpeed(fl);
+    back_right.setSpeed(br);
+    front_right.setSpeed(fr);
+    back_left.setSpeed(bl);
 }

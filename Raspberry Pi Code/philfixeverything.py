@@ -54,7 +54,8 @@ def initialize():
     GPIO.setup(10, GPIO.OUT)
     GPIO.output(10, GPIO.HIGH)
     picam = Picamera2()
-    picam.configure(picam.create_video_configuration(main={"format": 'XRGB8888', "size": (640, 480)})) # 640x480 picam 
+    picam.configure(picam.create_video_configuration(main={"format": 'XRGB8888', "size": (640, 480)}, # still stays 640x480
+                                                     raw={"size": (1640 ,1232)})) # but gets full FOV
     # init all IR sensors
     GPIO.setup(fl_sensor, GPIO.IN); GPIO.setup(bl_sensor, GPIO.IN); GPIO.setup(fr_sensor, GPIO.IN); GPIO.setup(br_sensor, GPIO.IN)
     # init goal switch and hat switch
@@ -100,34 +101,13 @@ def IR_sensor_read(): # need to get working actually
         rs.ir_bl = 1 - GPIO.input(bl_sensor)
         rs.ir_br = 1 - GPIO.input(br_sensor)
 
-        # print(f"FL = {rs.ir_fl}, FR = {rs.ir_fr}, BL = {rs.ir_bl}, BR = {rs.ir_br}")
-
-        # if (fl_val or fr_val or bl_val or br_val):
-        #     speed = -100
-        #     rotation = 0
-        #     if(fl_val):
-        #         angle = -135
-        #     elif(fr_val):
-        #         angle = 135
-        #     elif(bl_val):
-        #         angle = -45
-        #     elif(br_val):
-        #         angle = 45
-            
-        #     # write drive away command
-        #     command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
-        #     ser.write(command.encode())
-        #     # wait 1/4 sec
-        #     time.sleep(0.25) # check if this is long enough
-        #     # stop it 
-        #     ser.write("<STOP>".encode())
-
 #================== SERVO =======================================
 def init_servos():
     """
     Set both servos to 90 degrees
     """
-    hor_servo.angle = 90
+    rs.cam_pan = 90
+    hor_servo.angle = rs.cam_pan
     vert_servo.angle = 90
 
 def tilt_cam(angle):
@@ -141,6 +121,7 @@ def rotate_cam(angle):
     rotate the camera left and right to a specific angle
     """
     hor_servo.angle = angle
+    rs.cam_pan = hor_servo.angle
 
 def cam_sweep(rotation, min_angle, max_angle):
     """
@@ -153,6 +134,7 @@ def cam_sweep(rotation, min_angle, max_angle):
     if rotation == 0:
         for i in range(max_angle - min_angle):
             hor_servo.angle = min_angle + i 
+            rs.cam_pan = hor_servo.angle
             time.sleep(SERVO_SLEEP)
     elif rotation == 1:
         for i in range(max_angle - min_angle):

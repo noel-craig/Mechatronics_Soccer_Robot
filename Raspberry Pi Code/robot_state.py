@@ -47,6 +47,9 @@ class RobotState:
         # A 1 means this corner is over the white border
         self.ir_fl, self.ir_fr, self.ir_bl, self.ir_br = 0,0,0,0
 
+        # ---- Camera Settings ----
+        self.cam_pan = 90
+
     def reset_vision(self):
         """clear the found flags at the start of each frame"""
         self.found_ball = False
