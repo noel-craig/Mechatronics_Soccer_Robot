@@ -313,7 +313,8 @@ def state_machine():
 
 def send_command(speed, angle, rotation):
     global next_command
-    next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
+    # Python side: + angle = left, + rotation = CCW. Arduino is opposite, so both are negated here.
+    next_command = f"<DRIVE|{int(speed)}, {int(-angle)}, {int(-rotation)}>"
 
 def drive_update():
     global last_motor_cmd_time

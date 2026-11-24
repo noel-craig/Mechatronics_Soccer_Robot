@@ -22,10 +22,10 @@ void printArrayOfInts();
 
 
 Wheel wheels[] = {
-  Wheel(FL_PWM, FL_DIR1, FL_DIR2, true), //fl
+  Wheel(FL_PWM, FL_DIR1, FL_DIR2, false), //fl
   Wheel(FR_PWM, FR_DIR1, FR_DIR2, true), //fr
-  Wheel(BL_PWM, BL_DIR1, BL_DIR2, true), //bl
-  Wheel(BR_PWM, BR_DIR1, BR_DIR2, true, 0.93) //br
+  Wheel(BL_PWM, BL_DIR1, BL_DIR2, false), //bl
+  Wheel(BR_PWM, BR_DIR1, BR_DIR2, true) //br
 };
 
 Chassis chassis = Chassis(
