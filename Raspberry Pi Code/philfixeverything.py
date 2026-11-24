@@ -313,7 +313,7 @@ def state_machine():
 
 def send_command(speed, angle, rotation):
     global next_command
-    next_command = f"<DRIVE|{int(rotation)}, {int(angle)}, {int(-speed)}>"
+    next_command = f"<DRIVE|{int(speed)}, {int(angle)}, {int(rotation)}>"
 
 def drive_update():
     global last_motor_cmd_time
