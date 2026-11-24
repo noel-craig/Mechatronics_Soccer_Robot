@@ -37,7 +37,7 @@
   "turn" : {
     "k": 1.5,
     "max_rot": 100,
-    "min_rot": 50,
+    "min_rot": 60,
     "tol": 5
   },
 

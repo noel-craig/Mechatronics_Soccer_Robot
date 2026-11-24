@@ -319,10 +319,10 @@ def go(angle, speed=100, t=0.3):
     """
     USED IN DEBUGGING IN THE TERMINAL
     """
-    send_command(speed, angle, 0)
-    ser.write(p.next_command.encode())
+    p.send_command(speed, angle, 0)
+    p.ser.write(p.next_command.encode())
     time.sleep(t)
-    ser.write(b"<STOP>")
+    p.ser.write(b"<STOP>")
 
 def imu_thingy_for_stuff():
     global prev_time
