@@ -332,6 +332,15 @@ def drive_update():
         # not sleep but add timing and check last time write and make sure enough time
         # passed between current and the last motor write 
 
+def go(angle, speed=100, t=0.3):
+    """
+    USED IN DEBUGGING IN THE TERMINAL
+    """
+    send_command(speed, angle, 0)
+    ser.write(p.next_command.encode())
+    time.sleep(t)
+    ser.write(b"<STOP>")
+
 def imu_thingy_for_stuff():
     global prev_time
     # Read sensor values
