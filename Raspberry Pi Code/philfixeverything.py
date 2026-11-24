@@ -172,6 +172,7 @@ def process_frame(targets):
             draw_blob(debug, ball, "ball", min_ball_area, (0, 0, 255))
             if cv2.contourArea(ball) > min_ball_area: # above minimum size
                 ((rs.ball_x, rs.ball_y), rs.ball_r) = cv2.minEnclosingCircle(ball) # get coords
+                rs.ball_area = cv2.contourArea(ball)
                 rs.found_ball = True
 
     

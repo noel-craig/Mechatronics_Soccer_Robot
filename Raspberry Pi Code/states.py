@@ -88,6 +88,15 @@ class State_Machine():
 
         return False
 
+    def bearing_to(self, x_px):
+        """
+        Absolute heading (same frame as rs.angle_z, + = left) of something
+        seen at pixel column x_px in the current camera frame.
+        """
+        pan_offset = cal.CAM_PAN_SIGN * (rs.cam_pan - 90) # where the camera points vs robot front
+        pixel_offset = -(x_px - 160) * cal.CAM_DEG_PER_PX # right of center = negative
+        return wrap_180(rs.angle_z + pan_offset + pixel_offset)
+
     def defense(self):
 
         """
@@ -234,13 +243,13 @@ class State_Machine():
         self.r.process_frame(["ball"])
 
         if rs.found_ball:
-            predicted_distance = cal.BALL_DIST_INTERCEPT + cal.BALL_DIST_SLOPE * rs.ball_r # distance in ft.
+            predicted_distance = cal.BALL_DIST_K / np.sqrt(rs.ball_area) # distance in ft.
             hor_error = rs.ball_x - 160  # hor_error is horizontal error from center screen pixel
             hor_pos = (cal.BALL_SIZE / (2 * rs.ball_r)) * hor_error
-            if predicted_distance > cal.BALL_CLOSE_FT: # if the ball is greater than 2ft away we can determine angle to the ball
+            if predicted_distance > cal.BALL_CLOSE_FT: # if the ball is greater than 1ft away we can determine angle to the ball
                 self.angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
             else:
-                self.angle = 0 # if we're within 2 ft of the ball, it pretty much takes up the FOV, so set the angle to 0 and CHANGE STATE TO FIND THE GOAL with cam
+                self.angle = 0 # if we're within 1 ft of the ball, it pretty much takes up the FOV, so set the angle to 0 and CHANGE STATE TO FIND THE GOAL with cam
             self.speed = 120
             self.r.send_command(self.speed, self.angle, self.rotation)
             self.r.drive_update()

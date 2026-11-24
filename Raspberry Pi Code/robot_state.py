@@ -20,6 +20,7 @@ class RobotState:
         self.ball_x = 0
         self.ball_y = 0
         self.ball_r = 0
+        self.ball_area = 0
 
         # ---- enemy hat ----
         self.found_hat = False
@@ -49,6 +50,7 @@ class RobotState:
 
         # ---- Camera Settings ----
         self.cam_pan = 90
+
 
     def reset_vision(self):
         """clear the found flags at the start of each frame"""

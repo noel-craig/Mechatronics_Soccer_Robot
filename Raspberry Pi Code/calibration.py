@@ -40,11 +40,14 @@ DEFENSE_GOAL_PX = CAL["defense"]["goal_px"]
 DEFENSE_HEADING_TOL = CAL["defense"]["heading_tol"]
 
 # ---- ball distance fit ----
-BALL_DIST_INTERCEPT = CAL["ball_distance"]["intercept_ft"]
-BALL_DIST_SLOPE = CAL["ball_distance"]["slope_ft_per_px"]
+BALL_DIST_K = CAL["ball_distance"]["k"]
 BALL_CLOSE_FT = CAL["ball_distance"]["close_ft"]
 BALL_SIZE = CAL["ball_distance"]["ball_size"]
 
 # ---- escaping ir ----
 ESCAPE_SPEED = CAL["escape"]["escape_speed"]
 ESCAPE_TIME = CAL["escape"]["escape_time"]
+
+# ---- camera ----
+CAM_PAN_SIGN = CAL["camera"]["pan_sign"]
+CAM_DEG_PER_PX = CAL["camera"]["deg_per_px"]
