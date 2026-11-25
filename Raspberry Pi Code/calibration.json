@@ -6,8 +6,8 @@
     "ball_red_high": {"lower": [170, 150, 100], "upper": [180, 255, 255]},
     "hat_yellow":    {"lower": [25, 150, 100],  "upper": [40, 255, 255]},
     "hat_orange":    {"lower": [9, 229, 160],   "upper": [15, 255, 230]},
-    "goal_green":    {"lower": [47, 76, 140],   "upper": [58, 153, 255]},
-    "goal_purple":   {"lower": [110, 140, 100], "upper": [185, 180, 200]}
+    "goal_green":    {"lower": [34, 134, 104],   "upper": [86, 255, 240]},
+    "goal_purple":   {"lower": [115, 134, 71], "upper": [168, 255, 151]}
   },
 
   "min_area": {
