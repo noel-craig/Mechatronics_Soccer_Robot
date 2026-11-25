@@ -41,7 +41,7 @@ last_motor_cmd_time = time.time_ns()
 # ---- debug display ----
 # set False for competition (imshow slows the loop and needs a monitor/VNC/ssh -X)
 DEBUG_VIEW = True
-SHOW_MASKS = True # also show the black/white threshold masks for each color (great for tuning HSV)
+SHOW_MASKS = False # also show the black/white threshold masks for each color (great for tuning HSV)
 
 state = State_Machine(sys.modules[__name__]) # pass this module in so states.py can call its functions (process_frame, send_command, ...)
 prev_time = time.time()

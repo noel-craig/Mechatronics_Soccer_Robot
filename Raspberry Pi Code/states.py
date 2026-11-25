@@ -216,22 +216,22 @@ class State_Machine():
                 self.r.drive_update()
                 return
 
-# PUT THESE LINES BACK IN ONCE I CAN SENSE A GOAL
-            # self.r.process_frame(["goal"])
-            # seen = self.goal_bearing()
-            # if seen is not None:
-            #   rs.goal_heading = seen
-            #   print(f"init: goal found, heading {rs.goal_heading:.1f}")
-            #   self._set_phase("face")
-            #   return
+
+            self.r.process_frame(["goal"])
+            seen = self.goal_bearing()
+            if seen is not None:
+              rs.goal_heading = seen
+              print(f"init: goal found, heading {rs.goal_heading:.1f}")
+              self._set_phase("face")
+              return
             # wrong goal: ignore it and keep looking
 # =========================== TAKE THIS OUT ONCE I HAVE A GOAL TO LOOK AT =======
-            self.r.process_frame(["ball"])
-            if rs.found_ball:
-                rs.goal_heading = self.bearing_to(rs.ball_x)
-                print(f"init: (ball test) heading {rs.goal_heading:.1f}")
-                self._set_phase("face")
-                return
+            # self.r.process_frame(["ball"])
+            # if rs.found_ball:
+            #     rs.goal_heading = self.bearing_to(rs.ball_x)
+            #     print(f"init: (ball test) heading {rs.goal_heading:.1f}")
+            #     self._set_phase("face")
+            #     return
 # ===============================================================================
             
             # looked long enough without finding it -> turn another step (or give up)
