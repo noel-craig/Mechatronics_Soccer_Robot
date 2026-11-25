@@ -36,8 +36,13 @@ min_hat_area = CAL["min_area"]["hat"]
 min_goal_area = CAL["min_area"]["goal"]
 
 # ---- defense ----
-DEFENSE_GOAL_PX = CAL["defense"]["goal_px"]
-DEFENSE_HEADING_TOL = CAL["defense"]["heading_tol"]
+DEFENSE_SPEED = CAL["defense"]["speed"]
+DEFENSE_K_HEAD = CAL["defense"]["k_head"]
+DEFENSE_MAX_ROT = CAL["defense"]["max_rot"]
+DEFENSE_SEP_DEG = CAL["defense"]["sep_deg"]
+DEFENSE_BACKUP_TIME = CAL["defense"]["backup_time"]
+DEFENSE_LOOK_TIME = CAL["defense"]["look_time"]
+DEFENSE_SWEEP_DEG = CAL["defense"]["sweep_deg"]
 
 # ---- ball distance fit ----
 BALL_DIST_K = CAL["ball_distance"]["k"]
@@ -64,3 +69,52 @@ INIT_LOOK_TIME = CAL["init"]["look_time"]
 INIT_STEP_DEG = CAL["init"]["step_deg"]
 INIT_MAX_STEPS = CAL["init"]["max_steps"]
 INIT_TIMEOUT = CAL["init"]["timeout"]
+
+# ---- search ----
+SEARCH_SETTLE = CAL["search"]["settle"]
+SEARCH_LOOK_TIME = CAL["search"]["look_time"]
+SEARCH_STEP_DEG = CAL["search"]["step_deg"]
+SEARCH_MAX_STEPS = CAL["search"]["max_steps"]
+SEARCH_MEMORY = CAL["search"]["memory"]
+BALL_CONFIRM_FRAMES = CAL["search"]["confirm_frames"]
+
+# ---- approach ----
+APPROACH_SPEED = CAL["approach"]["speed"]
+APPROACH_MIN_SPEED = CAL["approach"]["min_speed"]
+APPROACH_SLOW_FT = CAL["approach"]["slow_ft"]
+APPROACH_STOP_FT = CAL["approach"]["stop_ft"]
+APPROACH_K_ROT = CAL["approach"]["k_rot"]
+APPROACH_MAX_ROT = CAL["approach"]["max_rot"]
+APPROACH_TURN_ONLY_DEG = CAL["approach"]["turn_only_deg"]
+APPROACH_LOST_TIME = CAL["approach"]["lost_time"]
+
+# ---- get_behind ----
+BEHIND_RADIUS_FT = CAL["get_behind"]["radius_ft"]
+BEHIND_STRAFE_SPEED = CAL["get_behind"]["strafe_speed"]
+BEHIND_MIN_STRAFE = CAL["get_behind"]["min_strafe"]
+BEHIND_K_ORBIT = CAL["get_behind"]["k_orbit"]
+BEHIND_K_DIST = CAL["get_behind"]["k_dist"]
+BEHIND_MAX_FWD = CAL["get_behind"]["max_fwd"]
+BEHIND_FF = CAL["get_behind"]["ff"]
+BEHIND_K_FACE = CAL["get_behind"]["k_face"]
+BEHIND_MAX_ROT = CAL["get_behind"]["max_rot"]
+BEHIND_TOL = CAL["get_behind"]["tol"]
+BEHIND_FACE_TOL = CAL["get_behind"]["face_tol"]
+BEHIND_TIMEOUT = CAL["get_behind"]["timeout"]
+
+# ---- attack ----
+ATTACK_SPEED = CAL["attack"]["speed"]
+ATTACK_K_HEAD = CAL["attack"]["k_head"]
+ATTACK_MAX_ROT = CAL["attack"]["max_rot"]
+ATTACK_K_STRAFE = CAL["attack"]["k_strafe"]
+ATTACK_MAX_STRAFE = CAL["attack"]["max_strafe"]
+ATTACK_REALIGN_DEG = CAL["attack"]["realign_deg"]
+ATTACK_LOST_TIME = CAL["attack"]["lost_time"]
+ATTACK_BLIND_FT = CAL["attack"]["blind_ft"]
+ATTACK_BLIND_TIME = CAL["attack"]["blind_time"]
+ATTACK_GOAL_BLEND = CAL["attack"]["goal_blend"]
+ATTACK_TIMEOUT = CAL["attack"]["timeout"]
+
+# ---- PK ----
+PK_SPEED = CAL["pk"]["speed"]
+PK_TIME = CAL["pk"]["time"]

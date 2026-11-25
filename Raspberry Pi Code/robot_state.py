@@ -21,6 +21,9 @@ class RobotState:
         self.ball_y = 0
         self.ball_r = 0
         self.ball_area = 0
+        self.ball_bearing = 0 # absolute heading of the ball when last seen (+ = left)
+        self.ball_seen_time = 0 # time.time() when the ball was last seen
+        self.ball_dist = 99 # ft, from the last frame that saw the ball
 
         # ---- enemy hat ----
         self.found_hat = False

@@ -17,9 +17,13 @@
   },
 
   "defense": {
-    "_comment": "goal_px = goal post x separation (px) when we are back at our end of the field. heading_tol = must be within this many degrees of goal heading to back up.",
-    "goal_px": 220,
-    "heading_tol": 90
+    "speed": 150,
+    "k_head": 2.0,
+    "max_rot": 80,
+    "sep_deg": 34,
+    "backup_time": 3.0,
+    "look_time": 1.0,
+    "sweep_deg": 40
   },
 
   "ball_distance": {
@@ -52,5 +56,59 @@
     "step_deg": 45,
     "max_steps": 8,
     "timeout": 15
+  },
+
+  "search":{
+    "settle": 0.25,
+    "look_time": 0.3,
+    "step_deg": 45,
+    "max_steps": 8,
+    "memory": 2.0,
+    "confirm_frames": 2
+  },
+
+  "approach":{
+    "speed": 150,
+    "min_speed": 80,
+    "slow_ft": 3.0,
+    "stop_ft": 1.5,
+    "k_rot": 2.0,
+    "max_rot": 80,
+    "turn_only_deg": 30,
+    "lost_time": 0.5
+  },
+
+  "get_behind" : {
+    "radius_ft" : 1.5,
+    "strafe_speed" : 130,
+    "min_strafe" : 80,
+    "k_orbit" : 2.0,
+    "k_dist" : 80,
+    "max_fwd" : 60,
+    "ff" : 0.4,
+    "k_face" : 2.0,
+    "max_rot" : 90,
+    "tol" : 10,
+    "face_tol" : 10,
+    "timeout" : 8
+  },
+
+  "attack" : {
+    "speed": 200,
+    "k_head": 2.0,
+    "max_rot": 80,
+    "k_strafe": 4.0,
+    "max_strafe": 100,
+    "realign_deg": 25,
+    "lost_time": 0.5,
+    "blind_ft": 1.2,
+    "blind_time": 1.5,
+    "goal_blend": 0.3,
+    "timeout": 6
+  },
+
+  "pk" : {
+    "speed": 200,
+    "time": 2
   }
 }

@@ -1,0 +1,15 @@
+# Raspberry Pi Python libraries for the soccer robot.
+# Install inside the venv:  pip install -r requirements.txt
+#
+# picamera2 is NOT installed from pip. Install it with apt and create the venv with
+# --system-site-packages so the venv can see it (see README.md):
+#     sudo apt install -y python3-picamera2
+
+numpy
+opencv-python
+pyserial
+RPi.GPIO
+gpiozero
+pigpio
+adafruit-blinka
+adafruit-circuitpython-mpu6050

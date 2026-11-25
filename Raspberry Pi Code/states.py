@@ -29,6 +29,10 @@ def wrap_180(angle):
     """
     return (angle + 180) % 360 - 180
 
+def clamp(x,lo,hi):
+    """limit x to the range lo -> hi"""
+    return max(lo, min(hi,x))
+
 class State_Machine():
     def __init__(self, robot, state_number = -1):
         self.r = robot # the main philfixeverything module
@@ -41,10 +45,13 @@ class State_Machine():
         self.state_start_time = time.time() # used for timeouts in states
         self.escape_until = 0
         self.escape_angle = 0
-        self.init_phase = "look"
+        self.phase = "look"
         self.phase_start = time.time()
-        self.init_steps = 0
-        self.init_target = 0
+        self.steps = 0
+        self.turn_target = 0
+        self.search_dir = 1
+        self.ball_seen_count = 0
+        self.orbit_dir = 1 # +1 = orbit CCW (strafe right), -1 = orbit CW (strafe left)
 
     def set_state(self, new_number):
         """
@@ -53,10 +60,13 @@ class State_Machine():
         if new_number == self.number:
             return # avoid time spent on this if still in same state
         print(f"STATE {self.number} -> {new_number}")
-        self.init_phase = "look"
+        self.phase = "look"
         self.phase_start = time.time()
-        self.init_steps = 0
-        self.init_target = 0
+        self.steps = 0
+        self.turn_target = 0
+        self.search_dir = 1
+        self.ball_seen_count = 0
+        self.orbit_dir = 1
         self.prev_number = self.number # in case we need to get back to the state from an IR Read
         self.state_start_time = time.time() # used for timeouts in some methods
         self.number = new_number # finally set state to new state number
@@ -121,47 +131,70 @@ class State_Machine():
         return False
 
     def defense(self):
+        """
+        state -2: fall back and guard our goal.
+        face their goal -> back up toward ours (holding heading) until their posts
+        look DEFENSE_SEP_DEG apart (or time runs out) -> guard: sweep +/- SWEEP_DEG.
+        Ball confirmed in any phase -> approach (1).
+        """
+        now = time.time()
 
-        """
-        state.number = -2
-        Defense: face the goal we score on (with +/-90 deg of GOAL_HEADING),
-            back-up toward our own goal until the opposing goal posts look close enough together,
-            then wait until we see the ball.
-        """
-        self.r.process_frame(["ball", "goal"]) # process if we can see the ball or the other goal
-        # how far off we are from GOAL_HEADING, wrapped to -180..180
-        heading_error = wrap_180(rs.goal_heading - rs.angle_z)
-        if rs.found_ball:
-            print("defense: found ball")
+        # every tick, every phase: one frame for ball + posts
+        if self.look_for_ball(["goal"]):
+            print(f"defense: ball at bearing {rs.ball_bearing:.1f} -> approach")
             self.set_state(1)
-        elif abs(heading_error) > cal.DEFENSE_HEADING_TOL:
-            # facing the wrong way, rotate toward GOAL_HEADING before backing up
-            print(f"defense: wrong way, heading err {heading_error:.1f}, rotating")
-            self.r.send_command(0, 0, 90 if heading_error > 0 else -90) # check rotation sign for direction
-            self.r.drive_update()
-        elif rs.found_green_goal and rs.found_purple_goal:
-            goal_px = abs(rs.green_x - rs.purple_x) # gets smaller the further we are from the goal
-            print(f"defense: goal px sep {goal_px:.0f} (target {cal.DEFENSE_GOAL_PX}), heading err {heading_error:.1f}")
-            if goal_px > cal.DEFENSE_GOAL_PX:
-                # still too close to their goal, keep backing up
-                self.r.send_command(150, 180, 0) # 180 = straight back, check angle
-                self.r.drive_update()
-            else:
-                # at our end of the field, stop and wait for the ball
-                print("defense: in position")
-                self.r.send_command(0, 0, 0)
-                # can go into wiggle
-                self.r.drive_update()
-        else:
-            # facing roughly right but cant see both posts, rotate toward GOAL_HEADING to find them
-            print(f"defense: goals not both seen, heading err {heading_error:.1f}")
-            self.r.send_command(0, 0, 60 if heading_error > 0 else -60) # check rotation sign
+            return
+        seen = self.refine_goal_heading()
+
+        if self.phase == "look":
+            self._set_phase("face")
+        if self.phase == "face":
+            if self.turn_toward(rs.goal_heading):
+                self._set_phase("backup")
+
+        elif self.phase == "backup":
+            # posts in view and far enough away? we're home <3
+            if seen is not None:
+                sep = abs(rs.purple_x - rs.green_x) * cal.CAM_DEG_PER_PX
+                if sep < cal.DEFENSE_SEP_DEG:
+                    print(f"defense: in position (posts {sep:.0f} deg apart)")
+                    self.r.send_command(0,0,0)
+                    self.r.drive_update(force=True)
+                    self._set_phase("guard")
+                    return
+
+            # safety net to not back up forever
+            if now - self.phase_start > cal.DEFENSE_BACKUP_TIME:
+                print("defense: backed up long enough >.<")
+                self.r.send_command(0,0,0)
+                self.r.drive_update(force = True)
+                self._set_phase("guard")
+                return
+            # back straight up, gyro holding us facing their goal
+            err = wrap_180(rs.goal_heading - rs.angle_z)
+            rot = clamp(cal.DEFENSE_K_HEAD * err, -cal.DEFENSE_MAX_ROT, cal.DEFENSE_MAX_ROT)
+            self.r.send_command(cal.DEFENSE_SPEED, 180, rot)
             self.r.drive_update()
 
-    def _init_phase(self, phase):
+        elif self.phase == "guard":
+            # sit still and watch
+            self.r.send_command(0,0,0)
+            self.r.drive_update()
+            if now - self.phase_start > cal.DEFENSE_LOOK_TIME:
+                #alternate left/right of the goal heading
+                self.steps += 1
+                side = 1 if self.steps % 2 else -1
+                self.turn_target = wrap_180(rs.goal_heading + side * cal.DEFENSE_SWEEP_DEG)
+                self._set_phase("sweep")
+
+        elif self.phase == "sweep":
+            if self.turn_toward(self.turn_target):
+                self._set_phase("guard")
+
+    def _set_phase(self, phase):
         """switch Init's sub-phase and restart its timer"""
-        print(f"  init: {self.init_phase} -> {phase}")
-        self.init_phase = phase
+        print(f"  phase: {self.phase} -> {phase}")
+        self.phase = phase
         self.phase_start = time.time()
 
     def init(self):
@@ -172,11 +205,11 @@ class State_Machine():
         now = time.time()
 
         # overall safety net. never get stuck in init
-        if self.init_phase != "face" and now - self.state_start_time > cal.INIT_TIMEOUT:
+        if self.phase != "face" and now - self.state_start_time > cal.INIT_TIMEOUT:
             print("init: timeout, assuming start heading faces goal")
             rs.goal_heading = 0
-            self._init_phase("face")
-        if self.init_phase == "look":
+            self._set_phase("face")
+        if self.phase == "look":
             # let the robot finish coasting before trusting the camera
             if now - self.phase_start < cal.INIT_SETTLE:
                 self.r.send_command(0,0,0)
@@ -185,122 +218,138 @@ class State_Machine():
 
 # PUT THESE LINES BACK IN ONCE I CAN SENSE A GOAL
             # self.r.process_frame(["goal"])
-            # if rs.found_green_goal and rs.found_purple_goal:
-            #     g = self.bearing_to(rs.green_x)
-            #     pu = self.bearing_to(rs.purple_x)
-            #     sep = wrap_180(pu - g) # + = purple is LEFT of green
-            #     purple_left = sep > 0
-            #     if purple_left == bool(rs.goal_state):
-            #         rs.goal_heading = wrap_180(g + sep/2)
-            #         print(f"init: goal found, heading {rs.goal_heading:.1f}")
-            #         self._init_phase("face")
-            #         return
-                # wrong goal: ignore it and keep looking
+            # seen = self.goal_bearing()
+            # if seen is not None:
+            #   rs.goal_heading = seen
+            #   print(f"init: goal found, heading {rs.goal_heading:.1f}")
+            #   self._set_phase("face")
+            #   return
+            # wrong goal: ignore it and keep looking
 # =========================== TAKE THIS OUT ONCE I HAVE A GOAL TO LOOK AT =======
             self.r.process_frame(["ball"])
             if rs.found_ball:
                 rs.goal_heading = self.bearing_to(rs.ball_x)
                 print(f"init: (ball test) heading {rs.goal_heading:.1f}")
-                self._init_phase("face")
+                self._set_phase("face")
                 return
 # ===============================================================================
             
             # looked long enough without finding it -> turn another step (or give up)
             if now - self.phase_start > cal.INIT_SETTLE + cal.INIT_LOOK_TIME:
-                if self.init_steps >= cal.INIT_MAX_STEPS:
+                if self.steps >= cal.INIT_MAX_STEPS:
                     print("init: full circle, no goal, assuming start heading")
                     rs.goal_heading = 0
-                    self._init_phase("face")
+                    self._set_phase("face")
                 else:
                     direction = 1 if self.spin_dir > 0 else -1
-                    self.init_target = wrap_180(rs.angle_z + direction * cal.INIT_STEP_DEG)
-                    self.init_steps += 1
-                    self._init_phase("turn")
-        elif self.init_phase == "turn":
-            if self.turn_toward(self.init_target):
-                self._init_phase("look")
-        elif self.init_phase == "face":
+                    self.turn_target = wrap_180(rs.angle_z + direction * cal.INIT_STEP_DEG)
+                    self.steps += 1
+                    self._set_phase("turn")
+        elif self.phase == "turn":
+            if self.turn_toward(self.turn_target):
+                self._set_phase("look")
+        elif self.phase == "face":
             if self.turn_toward(rs.goal_heading):
                 self.set_state(0)
 
-
+    def look_for_ball(self, extra = ()):
+        """
+        Grab a frame, update ball memory.  Returns True once the ball has been seen
+        in BALL_CONFIRM_FRAMES consecutive frames.
+        """
+        self.r.process_frame(["ball", *extra])
+        if rs.found_ball:
+            self.ball_seen_count += 1
+            rs.ball_bearing = self.bearing_to(rs.ball_x)
+            rs.ball_dist = cal.BALL_DIST_K / np.sqrt(rs.ball_area)
+            rs.ball_seen_time = time.time()
+        else:
+            self.ball_seen_count = 0
+        return self.ball_seen_count >= cal.BALL_CONFIRM_FRAMES
 
     def find_ball(self):
         """
-        Finding Ball (spin around until ball found, then state 1)
-        check ir
-        check camera for ball
-        cam scan
-        if found_ball true, change to state 1  
-        if ball too damn close, state 2
+        state 0: find the ball by turning in steps and looking while stopped.
+        First step goes toward where the ball was last seen (if recent).
+        Full circle with no ball -> defense (-2).  Ball confirmed -> approach (1).
         """
-        self.r.process_frame(["ball", "goal"])
-        if rs.found_ball:
-            self.set_state(1)
-        # backup and cam scan
-        self.r.send_command(-100, 0, 0)
-        self.r.drive_update()
-        self.r.cam_sweep(0,45,135)
+        now = time.time()
 
-        #if found_green_goal and found_purple_goal:
+        if self.phase == "look":
+            # let the robot stop coasting before trusting the camera
+            if now - self.phase_start < cal.SEARCH_SETTLE:
+                self.r.send_command(0,0,0)
+                self.r.drive_update()
+                return
+            if self.look_for_ball():
+                print(f"search: ball at bearing {rs.ball_bearing:.1f}")
+                self.set_state(1)
+                return
+            if now - self.phase_start > cal.SEARCH_SETTLE + cal.SEARCH_LOOK_TIME:
+                if self.steps >= cal.SEARCH_MAX_STEPS:
+                    print("search: full circle, no ball -> defense")
+                    self.set_state(-2)
+                    return
+                if self.steps == 0:
+                    # pick a directiononce, at the first step
+                    if now - rs.ball_seen_time < cal.SEARCH_MEMORY:
+                        # seen recently: turn toward where it went
+                        side = wrap_180(rs.ball_bearing - rs.angle_z)
+                        self.search_dir = 1 if side > 0 else -1
+                        print(f"search: last seen {'left' if side > 0 else 'right'}, turning that way")
+                    else:
+                        self.search_dir = 1 if self.spin_dir > 0 else -1
+                self.turn_target = wrap_180(rs.angle_z + self.search_dir * cal.SEARCH_STEP_DEG)
+                self.steps += 1
+                self._set_phase("turn")
 
-        # if backed up:
-        #     state = -2
-        # add look with servo
-
-        # if found_ball:
-        #     print(f"found ball x:{ball_x:.0f} r:{ball_r:.0f}")
-        #     if ball_r > 88: # closer than ~2ft, skip straight to lining up the kick
-        #         state = 2
-        #     else:
-        #         state = 1
-        # else:
-        #     # spin in place to look for the ball
-        #     print("looking for ball")
-        #     send_command(0, 0, spin_dir)
-        #     drive_update()
-        #     # option: stop and sweep camera instead of spinning robot
-        #     # send_command(0, 0, 0); drive_update()
-        #     # cam_sweep(0, 30, 150); rotate_cam(90)
-        #     # option: if spun a full circle (use angle_z) and no ball, back up or go to defense
-        #     # if abs(angle_z - search_start_angle) > 360:
-        #     #     state = -2
-    # This is old code for chasing the ball prolly still good and for state 1
+        elif self.phase == "turn":
+            if self.turn_toward(self.turn_target):
+                self._set_phase("look")
 
     def go_to_ball(self):
         """
-        Going To Ball (angle drive until distance is small then state 2) (if lost go to state 0)
-
-        check ir
-        check camera update for ball location
-        do drive to ball code,
-        if found ball false, go to state 0 
-        process_frame(["ball"])
+        state 1: drive at the ball, rotating to keep facing it.
+        Steers on rs.ball_bearing vs gyro so a missed frame doesn't matter.
+        Close enough -> get behind (2).  Lost too long -> search(0)
         """
-        self.r.process_frame(["ball"])
+        now = time.time()
+        self.look_for_ball() # updates rs.ball_bearing /ball_dist/ball_seen_time when seen
 
-        if rs.found_ball:
-            predicted_distance = cal.BALL_DIST_K / np.sqrt(rs.ball_area) # distance in ft.
-            hor_error = rs.ball_x - 160  # hor_error is horizontal error from center screen pixel
-            hor_pos = (cal.BALL_SIZE / (2 * rs.ball_r)) * hor_error
-            if predicted_distance > cal.BALL_CLOSE_FT: # if the ball is greater than 1ft away we can determine angle to the ball
-                self.angle = -np.arctan2(hor_pos, predicted_distance) * 180 / np.pi
-            else:
-                self.angle = 0 # if we're within 1 ft of the ball, it pretty much takes up the FOV, so set the angle to 0 and CHANGE STATE TO FIND THE GOAL with cam
-            self.speed = 120
-            self.r.send_command(self.speed, self.angle, self.rotation)
-            self.r.drive_update()
-            # print(f"dist {predicted_distance:.2f}ft  angle {angle:.1f}  cmd {next_command}")
-            # if predicted_distance <= 2.1: # close enough, line up the kick
-            #     send_command(0, 0, 0)
-            #     drive_update()
-            #     state = 2
+        # lost it?
+        if now - rs.ball_seen_time > cal.APPROACH_LOST_TIME:
+            print("approach: lost ball -> search")
+            self.set_state(0)
+            return
+
+        # close enough? (only trust distance form a frame that saw it this tick)
+        if rs.found_ball and rs.ball_dist < cal.APPROACH_STOP_FT:
+            print(f"approach: at ball ({rs.ball_dist:.1f} ft) -> get behind")
+            self.r.send_command(0,0,0)
+            self.r.drive_update(force=True)
+            self.set_state(2)
+            return
+
+        # steer: how far is the ball from where we're facing (+ = ball is left)
+        error = wrap_180(rs.ball_bearing - rs.angle_z)
+        rot = cal.APPROACH_K_ROT * error
+        rot = max(-cal.APPROACH_MAX_ROT, min(cal.APPROACH_MAX_ROT, rot))
+
+        if abs(error) > cal.APPROACH_TURN_ONLY_DEG:
+            # WAYYYY OFFF: turn in place first (needs enough rotation to not stall)
+            speed = 0
+            if abs(rot) < cal.TURN_MIN_ROT:
+                rot = cal.TURN_MIN_ROT if error > 0 else -cal.TURN_MIN_ROT
 
         else:
-            self.r.send_command(0,0,0)
-            self.r.drive_update()
-            print("lost ball")
-            self.set_state(0) # go back to find the ball now that we lost it
+            # roughly facing the ball: drive forward, slower as we get close
+            span = cal.APPROACH_SLOW_FT - cal.APPROACH_STOP_FT
+            frac = (rs.ball_dist - cal.APPROACH_STOP_FT) / span # 0 at stop_ft, 1 at slow_ft
+            frac = max(0.0, min(1.0, frac))
+            speed = cal.APPROACH_MIN_SPEED + frac * (cal.APPROACH_SPEED - cal.APPROACH_MIN_SPEED)
+
+        self.r.send_command(speed, 0, rot)
+        self.r.drive_update()
 
     def PK(self):
         """
@@ -308,69 +357,152 @@ class State_Machine():
         Use one of the active switch states to put the robot into PK mode
         This will drive forward for a set amount of time to hit the ball and then stop
         """
-        self.r.send_command(200, 0, 0)
+        if time.time() - self.state_start_time > cal.PK_TIME:
+            print("PK: done -> search")
+            rs.pk_state = 0 # main loop stops calling PK
+            self.set_state(0)
+            return
+        self.r.send_command(cal.PK_SPEED, 0, 0)
         self.r.drive_update()
 
     def rotate_for_kick(self):
         """
-        Rotating for kick (center goal in frame with rotation then got to state 3)
-
-        check ir
-        check camera for ball and goal pieces ()
-            if one goal piece check with gyro for direction of our desired goal
-        if found ball and both goal, drive to put goal intersection 
-        
+        state 2: get behind the ball.
+        Orbit the ball (strafe sideways + rotate to keep facing it) until our heading
+        matches rs.goal_heading, i.e. the ball is between us and their goal.
+        Lined up -> attack(3). Lost ball -> search (0). Timeout -> attack anyway.
         """
-        self.r.process_frame(["ball","goal"])
+        now = time.time()
+        self.look_for_ball()
 
-        # WE MAY NEED TO REMOVE THIS FIRST STATEMENT.  WHEN THE BALL IS CLOSE IT TAKES UP FOV
-        if not rs.found_ball:
-            print("lost ball while lining up")
+        # lost it?
+        if now - rs.ball_seen_time > cal.APPROACH_LOST_TIME:
+            print("get behind: lost ball -> search")
             self.set_state(0)
-        elif rs.found_green_goal and rs.found_purple_goal:
-            goal_center_x = (rs.green_x + rs.purple_x) / 2
-            goal_error = goal_center_x - rs.ball_x  # want goal center lined up behind the ball
-            ball_error = rs.ball_x - 160            # keep ball centered in frame
-            print(f"goal err {goal_error:.0f}  ball err {ball_error:.0f}")
-            if abs(goal_error) < 15 and abs(ball_error) < 20:
-                self.r.send_command(0, 0, 0)
-                self.r.drive_update()
-                self.set_state(3)
-            else:
-                # orbit the ball: strafe sideways while rotating to keep ball centered
-                strafe_angle = 90 if goal_error < 0 else -90   # check sign, negative angle = right
-                rotation = -0.5 * ball_error                   # check sign
-                self.r.send_command(120, strafe_angle, rotation)
-                self.r.drive_update()
+            return
+
+        # taking too long (ball on wall, etc.)? DON'T BE SILLY. SEND IT!
+        if now - self.state_start_time > cal.BEHIND_TIMEOUT:
+            print("get behind: timeout. DON'T BE SILLY! SEND IT!!")
+            self.set_state(3)
+            return
+
+        goal_err = wrap_180(rs.goal_heading - rs.angle_z) # + = need to swing CCW
+        ball_err = wrap_180(rs.ball_bearing - rs.angle_z) # + = ball is left of center
+
+        # lined up?
+        if abs(goal_err) < cal.BEHIND_TOL and abs(ball_err) < cal.BEHIND_FACE_TOL:
+            print(f"get behind: lined up (goal err {goal_err:.0f}) -> attack")
+            self.r.send_command(0,0,0)
+            self.r.drive_update(force=True)
+            self.set_state(3)
+            return
+
+        # pick orbit direction: shorter way round, but near 180 keep the old
+        # direction so it doesn't flip-flop when both ways are equally far
+        if abs(goal_err) < 150:
+            self.orbit_dir = 1 if goal_err > 0 else -1
+
+        # sideways: slow down as we get close to lined up
+        if abs(goal_err) < cal.BEHIND_TOL:
+            strafe = 0 # heading is good, only fix facing
         else:
-            # cant see both goal posts, use gyro to turn toward GOAL_HEADING
-            heading_error = wrap_180(rs.goal_heading - rs.angle_z)
-            print(f"no goal in view, heading err {heading_error:.1f}")
-            strafe_angle = 90 if heading_error > 0 else -90    # check sign
-            self.r.send_command(120, strafe_angle, -0.5 * (rs.ball_x - 160))
-            self.r.drive_update()
+            strafe = clamp(cal.BEHIND_K_ORBIT * abs(goal_err), cal.BEHIND_MIN_STRAFE, cal.BEHIND_STRAFE_SPEED)
+
+        left = -self.orbit_dir * strafe # CCW orbit = strafe RIGHT (negative left)
+
+        # forward/back: hodl the orbit radius (only wiht a fresh distance)
+        fwd = 0
+        if rs.found_ball:
+            fwd = clamp(cal.BEHIND_K_DIST * (rs.ball_dist - cal.BEHIND_RADIUS_FT), -cal.BEHIND_MAX_FWD, cal.BEHIND_MAX_FWD)
+
+        # combine into one mecanum drive command
+        speed = np.hypot(fwd, left)
+        angle = np.degrees(np.arctan2(left,fwd))
+
+        # rotation: feedforward from strafing + correction to keep ball centered
+        rot = self.orbit_dir * cal. BEHIND_FF * strafe + cal.BEHIND_K_FACE * ball_err
+        rot = clamp(rot, -cal.BEHIND_MAX_ROT, cal.BEHIND_MAX_ROT)
+        if strafe == 0 and abs(fwd) < 30 and rot != 0:
+            #turning nearly in place; make sure it's enough to not stall
+            rot = rot / abs(rot) * max(abs(rot), cal.TURN_MIN_ROT)
+
+        self.r.send_command(speed, angle, rot)
+        self.r.drive_update()
+
+    def goal_bearing(self):
+        """
+        Absolute bearing of the center of THEIR goal, if both posts are in the current frame and in the right order for rs.goal_state.  Otherwise None.
+        Call after a process_frame that included "goal"
+        """
+        if not(rs.found_green_goal and rs.found_purple_goal):
+            return None
+        g = self.bearing_to(rs.green_x)
+        pu = self.bearing_to(rs.purple_x)
+        sep = wrap_180(pu - g)  # + = purple is left of green
+        if (sep > 0) != bool(rs.goal_state):
+            return None # posts in wrong order: that's our own goal dummy!
+        return wrap_180(g + sep/2)
+
+    def refine_goal_heading(self):
+        """
+        If their posts are in the current frame, nudge rs.goal_heading toward them.
+        Returns the goal bearing seen this frame or None.
+        Call after a process_frame that included "goal".
+        """
+        seen = self.goal_bearing()
+        if seen is not None:
+            rs.goal_heading = wrap_180(rs.goal_heading + cal.ATTACK_GOAL_BLEND * wrap_180(seen - rs.goal_heading))
+
+        return seen
 
     def drive_into_goal(self):
         """
-        Driving into goal (drive straight at goal, kick if enemy hat seen, then state 0)
+        state 3: attack. Push the ball at their goal.
+        Rotation holds heading on the goal (gyro); strafing keeps the ball
+        centered in front. Seeing their post refines rs.goal_heading.
+        Lost ball -> search (0). Knocked off line -> approach (1)
         """
-        self.r.tilt_cam(110) # look up at goal, check angle
-        self.r.process_frame(["ball", "goal", "hat"])
-        if rs.found_green_goal and rs.found_purple_goal:
-            goal_center_x = (rs.green_x + rs.purple_x) / 2
-            rotation = -0.5 * (goal_center_x - 160) # steer toward goal center, check sign
-            self.r.send_command(255, 0, rotation)
+        now = time.time()
+        self.look_for_ball(["goal"]) # one frame: ball + posts
+
+        # refine goal heading from the real posts (blend so one bad frame can't yank it)
+        self.refine_goal_heading()
+
+        # lost ball? if it was last seen right in front, it's probably just under the camera
+        if rs.ball_dist < cal.ATTACK_BLIND_FT:
+            lost_limit = cal.ATTACK_BLIND_TIME
         else:
-            # hold gyro heading
-            heading_error = wrap_180(rs.goal_heading - rs.angle_z)
-            self.r.send_command(255, 0, 2 * heading_error) # check sign
-        self.r.drive_update()
-        print(f"driving to goal cmd {self.r.next_command}  hat {rs.found_hat}")
-        if rs.found_hat:
-            print("enemy seen, kick")
-            # ser.write("<KICK>".encode()) # arduino does not have a KICK command yet
-            self.r.tilt_cam(90)
+            lost_limit = cal.ATTACK_LOST_TIME
+        if now - rs.ball_seen_time > lost_limit:
+            print("attack: timeout -> search")
             self.set_state(0)
-        # if not rs.found_ball: (ball may be hidden under camera when tilted up)
-        #     self.r.tilt_cam(90)
-        #     self.number = 0
+            return
+
+        # been at it too long (scored, stuck on wall, ...)
+        if now - self.state_start_time > cal.ATTACK_TIMEOUT:
+            print("attack: tiemout -> search")
+            self.set_state(0)
+            return
+
+        goal_err = wrap_180(rs.goal_heading - rs.angle_z) # + = goal is left
+        ball_err = wrap_180(rs.ball_bearing - rs.angle_z) # + = ball is left
+
+        # knocked off line? set up again
+        if abs(goal_err) > cal.ATTACK_REALIGN_DEG or (rs.found_ball and abs(ball_err) > cal.ATTACK_REALIGN_DEG):
+            print(f"attack: off line (goal {goal_err:.0f}, ball {ball_err:.0f}) -> approach")
+            self.set_state(1)
+            return
+        # sideways: slide to keep the ball centered ( only on a fresh sighting)
+        left = 0
+        if rs.found_ball:
+            left = clamp(cal.ATTACK_K_STRAFE * ball_err, -cal.ATTACK_MAX_STRAFE, cal.ATTACK_MAX_STRAFE)
+        fwd = cal.ATTACK_SPEED
+        speed = min(255, np.hypot(fwd, left))
+        angle = np.degrees(np.arctan2(left, fwd))
+
+        # rotation: hold heading on the goal
+        rot = clamp(cal.ATTACK_K_HEAD * goal_err, -cal.ATTACK_MAX_ROT, cal.ATTACK_MAX_ROT)
+
+        self.r.send_command(speed, angle, rot)
+        self.r.drive_update()

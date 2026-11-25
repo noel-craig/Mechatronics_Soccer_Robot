@@ -11,6 +11,8 @@ br_sensor = 22 # Back right GPIO pin
 goal_switch = 5 # high = purple left, low = green left
 pk_switch = 6 # high = yellow hat low = orange hat
 switch_high = 10
+
+# ---- PIGPIO NEEDS TO BE ACTIVATED FOR SERVOS TO RUN SMOOTHLY ----
 # Servo pin factory: pigpio gives hardware-timed pulses (no jitter).
 # Needs the daemon running first: sudo pigpiod   (or enable at boot: sudo systemctl enable --now pigpiod)
 # pigpio does NOT work on a Pi 5. If this falls back, servos will still jitter.
