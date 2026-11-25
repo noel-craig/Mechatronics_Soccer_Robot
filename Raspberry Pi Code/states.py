@@ -30,32 +30,34 @@ def wrap_180(angle):
     return (angle + 180) % 360 - 180
 
 def clamp(x,lo,hi):
-    """limit x to the range lo -> hi"""
+    """limit x to the range lo -> hi
+        only made this function because it was quicker to type...
+    """
     return max(lo, min(hi,x))
 
 class State_Machine():
     def __init__(self, robot, state_number = -1):
         self.r = robot # the main philfixeverything module
-        self.number = state_number
+        self.number = state_number # state number (defaults to init)
         self.spin_dir = random.choice([-90, 90]) # random left or right direction might still be too fast
-        self.speed = 0
-        self.angle = 0
-        self.rotation = 0
-        self.prev_number = state_number
+        self.speed = 0 # start with speed = 0
+        self.angle = 0 # start with angle = 0
+        self.rotation = 0 # start with rotation speed = 0
+        self.prev_number = state_number # used for tracking what the previous state number was.  Used in IR sensing
         self.state_start_time = time.time() # used for timeouts in states
-        self.escape_until = 0
-        self.escape_angle = 0
-        self.phase = "look"
-        self.phase_start = time.time()
-        self.steps = 0
+        self.escape_until = 0 # IR sensor
+        self.escape_angle = 0 # IR sensor
+        self.phase = "look" # split the states into different phases.  Always start each state with "look" so we can recognize what's going on before an action is taken
+        self.phase_start = time.time() # start timer at the beginning of the phase
+        self.steps = 0 # different phases use number of steps for timeouts.  resets for each state start
         self.turn_target = 0
-        self.search_dir = 1
-        self.ball_seen_count = 0
+        self.search_dir = 1 
+        self.ball_seen_count = 0 # records number of ticks the ball is seen for to help avoid blurry image capture ruining a state
         self.orbit_dir = 1 # +1 = orbit CCW (strafe right), -1 = orbit CW (strafe left)
 
     def set_state(self, new_number):
         """
-        Used to handoff state transitions.
+        Used to handoff state transitions.  Resets values at the beginning of the state start.
         """
         if new_number == self.number:
             return # avoid time spent on this if still in same state
@@ -79,21 +81,21 @@ class State_Machine():
         False otherwise.
         """
         now = time.time()
-        already_escaping = now < self.escape_until
-        fl, fr, bl, br = rs.ir_fl, rs.ir_fr, rs.ir_bl, rs.ir_br
+        already_escaping = now < self.escape_until # boolean to check if the robot is already moving from the white border
+        fl, fr, bl, br = rs.ir_fl, rs.ir_fr, rs.ir_bl, rs.ir_br # easier to type than the full object
 
         if fl or fr or bl or br:
             # each tripped corner pushes us away from itself
             forward_push = (bl+br) - (fl + fr) # + = move forward
             left_push = (fr + br) - (fl + bl) # - = move left
             if forward_push == 0 and left_push == 0:
-                # diagonal pair or all four: no clear direction, just stop
+                # diagonal pair or all four: no clear direction, just stop because there's something obviously wrong.
                 self.r.send_command(0,0,0)
                 self.r.drive_update()
                 return True
-            self.escape_angle = np.degrees(np.arctan2(left_push, forward_push))
-            self.escape_until = now + cal.ESCAPE_TIME
-            if not already_escaping:
+            self.escape_angle = np.degrees(np.arctan2(left_push, forward_push)) # calculates angle to escape.  Takes in consideration if two sensors are triggered at the same time
+            self.escape_until = now + cal.ESCAPE_TIME # set how long we want to run away from the white line
+            if not already_escaping: # first tick of IR triggered
                 print(f"ESCAPE {self.escape_angle:.0f}")
 
         if now < self.escape_until:
@@ -111,15 +113,16 @@ class State_Machine():
         """
         pan_offset = cal.CAM_PAN_SIGN * (rs.cam_pan - 90) # where the camera points vs robot front
         pixel_offset = -(x_px - 160) * cal.CAM_DEG_PER_PX # right of center = negative
-        return wrap_180(rs.angle_z + pan_offset + pixel_offset)
+        return wrap_180(rs.angle_z + pan_offset + pixel_offset) # combination of gyro + servo + camera view
 
     def turn_toward(self, target_heading):
         """
         One tick of a proportional turn toward an absolute heading (+ = left / CCW).
         Returns True when within TURN_TOL (and the robot is stopped), False while still turning.
+        Used sort of as a p-controller for turning to a specific angle.  Gets close enough (TURN_TOL)
         """
-        error = wrap_180(target_heading - rs.angle_z)
-        if abs(error) < cal.TURN_TOL:
+        error = wrap_180(target_heading - rs.angle_z) # difference between where we want to be and where we're facing
+        if abs(error) < cal.TURN_TOL: # if the error is below tolerance, then don't turn anymore
             self.r.send_command(0,0,0)
             self.r.drive_update(force=True)
             return True
@@ -139,48 +142,51 @@ class State_Machine():
         """
         now = time.time()
 
-        # every tick, every phase: one frame for ball + posts
-        if self.look_for_ball(["goal"]):
+        # every tick, every phase: one frame for ball + goal
+        if self.look_for_ball(["goal"]): # true if it's seen the ball AND goal
             print(f"defense: ball at bearing {rs.ball_bearing:.1f} -> approach")
-            self.set_state(1)
-            return
-        seen = self.refine_goal_heading()
+            self.set_state(1) # switch to go_to_ball
+            return # get out of defense
+        seen = self.refine_goal_heading() # we may see the goal soon.  So, we'll want to update its heading as soon as we do
 
-        if self.phase == "look":
+        if self.phase == "look": # don't need a look phase, but have to get out of it when at start of state
             self._set_phase("face")
         if self.phase == "face":
-            if self.turn_toward(rs.goal_heading):
+            if self.turn_toward(rs.goal_heading): # we turn about-face towards where their goal is and switch to backup
                 self._set_phase("backup")
 
         elif self.phase == "backup":
             # posts in view and far enough away? we're home <3
-            if seen is not None:
-                sep = abs(rs.purple_x - rs.green_x) * cal.CAM_DEG_PER_PX
-                if sep < cal.DEFENSE_SEP_DEG:
+            if seen is not None: # we can see their goal
+                sep = abs(rs.purple_x - rs.green_x) * cal.CAM_DEG_PER_PX # this gives us degrees between their goals 
+                if sep < cal.DEFENSE_SEP_DEG: # goal posts are far enough apart, stop and switch to guard
                     print(f"defense: in position (posts {sep:.0f} deg apart)")
                     self.r.send_command(0,0,0)
                     self.r.drive_update(force=True)
                     self._set_phase("guard")
                     return
 
-            # safety net to not back up forever
+            # safety net to not back up forever if we don't see their goal
             if now - self.phase_start > cal.DEFENSE_BACKUP_TIME:
-                print("defense: backed up long enough >.<")
+                print("defense: backed up long enough (>.<)")
                 self.r.send_command(0,0,0)
                 self.r.drive_update(force = True)
                 self._set_phase("guard")
                 return
-            # back straight up, gyro holding us facing their goal
-            err = wrap_180(rs.goal_heading - rs.angle_z)
-            rot = clamp(cal.DEFENSE_K_HEAD * err, -cal.DEFENSE_MAX_ROT, cal.DEFENSE_MAX_ROT)
-            self.r.send_command(cal.DEFENSE_SPEED, 180, rot)
+            # back straight up, gyro holding us facing their goal.  
+            err = wrap_180(rs.goal_heading - rs.angle_z) # difference between where their goal is and which direction we're facing
+            rot = clamp(cal.DEFENSE_K_HEAD * err, -cal.DEFENSE_MAX_ROT, cal.DEFENSE_MAX_ROT) # this will hopefully be a very small rotation. Adjust K down if we keep having big rotations
+            ############### PUT IT IN REVERSE TERRY!!!!!! ####################
+            self.r.send_command(cal.DEFENSE_SPEED, 180, rot) 
             self.r.drive_update()
+            print("PUT IT IN REVERSE TERRY!!!!!")
+            ##################################################################
 
         elif self.phase == "guard":
             # sit still and watch
             self.r.send_command(0,0,0)
             self.r.drive_update()
-            if now - self.phase_start > cal.DEFENSE_LOOK_TIME:
+            if now - self.phase_start > cal.DEFENSE_LOOK_TIME: # we've sat long enough and gave the camera enough time to settle
                 #alternate left/right of the goal heading
                 self.steps += 1
                 side = 1 if self.steps % 2 else -1
@@ -189,10 +195,10 @@ class State_Machine():
 
         elif self.phase == "sweep":
             if self.turn_toward(self.turn_target):
-                self._set_phase("guard")
+                self._set_phase("guard") # loops between sweep and guard to go back and forth
 
     def _set_phase(self, phase):
-        """switch Init's sub-phase and restart its timer"""
+        """helper function: switch phase and restart its timer"""
         print(f"  phase: {self.phase} -> {phase}")
         self.phase = phase
         self.phase_start = time.time()
@@ -204,10 +210,10 @@ class State_Machine():
         """
         now = time.time()
 
-        # overall safety net. never get stuck in init
+        # overall safety net. never get stuck in init. timeout
         if self.phase != "face" and now - self.state_start_time > cal.INIT_TIMEOUT:
             print("init: timeout, assuming start heading faces goal")
-            rs.goal_heading = 0
+            rs.goal_heading = 0 # this will get updated in different states
             self._set_phase("face")
         if self.phase == "look":
             # let the robot finish coasting before trusting the camera
@@ -216,11 +222,10 @@ class State_Machine():
                 self.r.drive_update()
                 return
 
-
-            self.r.process_frame(["goal"])
+            self.r.process_frame(["goal"]) # lookin for da goal
             seen = self.goal_bearing()
             if seen is not None:
-              rs.goal_heading = seen
+              rs.goal_heading = seen # update the goal heading
               print(f"init: goal found, heading {rs.goal_heading:.1f}")
               self._set_phase("face")
               return
@@ -238,24 +243,25 @@ class State_Machine():
             if now - self.phase_start > cal.INIT_SETTLE + cal.INIT_LOOK_TIME:
                 if self.steps >= cal.INIT_MAX_STEPS:
                     print("init: full circle, no goal, assuming start heading")
-                    rs.goal_heading = 0
+                    rs.goal_heading = 0 # will get updated in different states
                     self._set_phase("face")
-                else:
+                else: # spin INIT_STEP_DEG and check for the goal markers
                     direction = 1 if self.spin_dir > 0 else -1
                     self.turn_target = wrap_180(rs.angle_z + direction * cal.INIT_STEP_DEG)
                     self.steps += 1
                     self._set_phase("turn")
-        elif self.phase == "turn":
+        elif self.phase == "turn": # used for turning to + INIT_STEP_DEG
             if self.turn_toward(self.turn_target):
                 self._set_phase("look")
-        elif self.phase == "face":
-            if self.turn_toward(rs.goal_heading):
+        elif self.phase == "face": # END OF INIT. FIND THE BALL PLS.
+            if self.turn_toward(rs.goal_heading): # Must be facing oppenents goal
                 self.set_state(0)
 
     def look_for_ball(self, extra = ()):
         """
         Grab a frame, update ball memory.  Returns True once the ball has been seen
         in BALL_CONFIRM_FRAMES consecutive frames.
+        extra is for goal or hats with the ball
         """
         self.r.process_frame(["ball", *extra])
         if rs.found_ball:
@@ -270,6 +276,7 @@ class State_Machine():
     def find_ball(self):
         """
         state 0: find the ball by turning in steps and looking while stopped.
+        This uses a very similar logic to the init, but is looking for the ball instead of the goal.
         First step goes toward where the ball was last seen (if recent).
         Full circle with no ball -> defense (-2).  Ball confirmed -> approach (1).
         """
